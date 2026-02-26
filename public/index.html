@@ -40,6 +40,33 @@
     #queuePanel h3{ margin:0 0 8px 0; font-size:16px }
     #queuePanel ul{ list-style:none; padding:0; margin:0 }
     #queuePanel li{ padding:6px 4px; border-bottom:1px solid #222 }
+
+    /* Chat styles */
+    #chat-container {
+      width: 300px;
+      height: 300px;
+      border: 1px solid #333;
+      display: flex;
+      flex-direction: column;
+      background: #111;
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1000;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    #chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      font-size: 14px;
+    }
+    .chat-controls { display: flex; padding: 5px; border-top: 1px solid #333; background: #222; }
+    #chat-input { flex: 1; padding: 6px; background: #333; color: #fff; border: 1px solid #444; border-radius: 4px; }
   </style>
 </head>
 <body>
@@ -91,14 +118,22 @@
     </div>
   </div>
 
-  <div id="messages"></div>
+  <!-- Khung chứa Chat -->
+  <div id="chat-container">
+      <div id="chat-messages"></div>
+      <div class="chat-controls">
+          <input id="chat-input" type="text" placeholder="Nhập tin nhắn...">
+          <button id="send-chat">Gửi</button>
+      </div>
+  </div>
+
   <div id="hands"></div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
-    let myId = null;
-    let currentRoom = null;
+    var myId = null;
+    var roomName = null;
     window.__showdownHands = null;
     window.__defaultBigBlind = null;
 
@@ -114,8 +149,8 @@
     }
 
     // server will emit joinAccepted or joinError
-    socket.on('joinAccepted', (roomName) => {
-      currentRoom = roomName;
+    socket.on('joinAccepted', (roomNameAccepted) => {
+      roomName = roomNameAccepted;
       // show seats/table
       document.querySelector('.table-area').style.display = 'block';
       // disable room input and join button to avoid switching
@@ -173,42 +208,42 @@
     });
 
     document.getElementById('bankBorrowBtn').addEventListener('click', () => {
-      if (!currentRoom) return alert('Vui lòng vào phòng');
+      if (!roomName) return alert('Vui lòng vào phòng');
       const amount = document.getElementById('bankAmountInput').value;
-      socket.emit('bankBorrow', { room: currentRoom, amount: amount });
+      socket.emit('bankBorrow', { room: roomName, amount: amount });
     });
     document.getElementById('bankRepayBtn').addEventListener('click', () => {
-      if (!currentRoom) return alert('Vui lòng vào phòng');
+      if (!roomName) return alert('Vui lòng vào phòng');
       const amount = document.getElementById('bankAmountInput').value;
-      socket.emit('bankRepay', { room: currentRoom, amount: amount });
+      socket.emit('bankRepay', { room: roomName, amount: amount });
     });
 
     function refreshPage() {
-      if (currentRoom) socket.emit('leaveRoom', currentRoom);
+      if (roomName) socket.emit('leaveRoom', roomName);
       // small delay to allow event to send, then reload
       setTimeout(() => { location.reload(); }, 150);
     }
 
     // treat browser refresh/close as leaving the room (best-effort)
     window.addEventListener('beforeunload', () => {
-      if (currentRoom) {
-        try { socket.emit('leaveRoom', currentRoom); } catch (e) { }
+      if (roomName) {
+        try { socket.emit('leaveRoom', roomName); } catch (e) { }
       }
     });
 
     function joinSeat(index){
-      if (!currentRoom) return alert('Vui lòng vào phòng trước');
-      socket.emit('joinSeat', { room: currentRoom, seatIndex: index });
+      if (!roomName) return alert('Vui lòng vào phòng trước');
+      socket.emit('joinSeat', { room: roomName, seatIndex: index });
     }
 
     function deal() {
-      if (!currentRoom) return alert('Vui lòng vào phòng trước');
-      socket.emit("dealCards", currentRoom);
+      if (!roomName) return alert('Vui lòng vào phòng trước');
+      socket.emit("dealCards", roomName);
     }
 
     function bet() {
-      if (!currentRoom) return alert('Vui lòng vào phòng trước');
-      socket.emit("bet", { room: currentRoom, amount: 10 });
+      if (!roomName) return alert('Vui lòng vào phòng trước');
+      socket.emit("bet", { room: roomName, amount: 10 });
     }
 
     // make seats clickable (use currentRoom inside joinSeat)
@@ -219,7 +254,7 @@
 
     // start table click (only dealer allowed)
     document.getElementById('tableStartBox').addEventListener('click', () => {
-      if (!currentRoom) return alert('Vui lòng vào phòng trước');
+      if (!roomName) return alert('Vui lòng vào phòng trước');
       // ensure only dealer can trigger start/end
       if (window.__dealerId && myId !== window.__dealerId) {
         alert('Chỉ Dealer mới có thể thao tác Start/End');
@@ -227,29 +262,17 @@
       }
       const btn = document.getElementById('tableStartBox');
       if (btn.dataset.state === 'started') {
-        socket.emit('endGame', currentRoom);
+        socket.emit('endGame', roomName);
       } else {
         if (!window.__defaultBigBlind) {
           const bigBlind = prompt("Nhập số tiền Big Blind (Small Blind sẽ bằng một nửa):", "10");
           if (bigBlind !== null && bigBlind.trim() !== "") {
-            socket.emit('startGame', { room: currentRoom, bigBlind: bigBlind.trim() });
+            socket.emit('startGame', { room: roomName, bigBlind: bigBlind.trim() });
           }
         } else {
-          socket.emit('startGame', { room: currentRoom });
+          socket.emit('startGame', { room: roomName });
         }
       }
-    });
-
-    socket.on("message", (msg) => {
-      const container = document.getElementById("messages");
-      // If this is a "sit" message, clear previous logs first
-      if (typeof msg === 'string' && msg.includes('ngồi ghế')) {
-        container.innerHTML = '';
-      }
-      const p = document.createElement('p');
-      p.textContent = msg;
-      // newest messages at the top
-      container.insertBefore(p, container.firstChild);
     });
 
     socket.on("updatePot", (pot) => {
@@ -609,31 +632,34 @@
 
     // wire action clicks
     document.getElementById('checkBtn').addEventListener('click', () => {
-      if (!currentRoom) return;
+      if (!roomName) return;
       const action = document.getElementById('checkBtn').textContent;
-      socket.emit('playerAction', { room: currentRoom, action: action });
+      socket.emit('playerAction', { room: roomName, action: action });
       // disable until next opportunity
       updateRoundButtons();
     });
     document.getElementById('raiseBtn').addEventListener('click', () => {
-      if (!currentRoom) return;
+      if (!roomName) return;
       const mySeat = window.__lastSeatUpdate ? window.__lastSeatUpdate.find(s => s && s.id === myId) : null;
       const myCurrentBet = mySeat ? (mySeat.bet || 0) : 0;
       const minAdd = Math.max(1, (window.__currentMaxBet || 0) - myCurrentBet + 1);
       const amount = prompt(`Nhập số tiền tố thêm (Tối thiểu để vượt mức cược hiện tại: ${minAdd})`);
-      socket.emit('playerAction', { room: currentRoom, action: 'Raise', amount });
+      socket.emit('playerAction', { room: roomName, action: 'Raise', amount });
       updateRoundButtons();
     });
     document.getElementById('allinBtn').addEventListener('click', () => {
-      if (!currentRoom) return;
-      socket.emit('playerAction', { room: currentRoom, action: 'All in' });
+      if (!roomName) return;
+      socket.emit('playerAction', { room: roomName, action: 'All in' });
       updateRoundButtons();
     });
     document.getElementById('foldBtn').addEventListener('click', () => {
-      if (!currentRoom) return;
-      socket.emit('playerAction', { room: currentRoom, action: 'Bỏ bài' });
+      if (!roomName) return;
+      socket.emit('playerAction', { room: roomName, action: 'Bỏ bài' });
       updateRoundButtons();
     });
   </script>
+  <script src="frontend.js"></script>
+</body>
+</html>
 </body>
 </html>
