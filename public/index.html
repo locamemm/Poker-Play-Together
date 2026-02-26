@@ -162,7 +162,6 @@
     <button id="joinBtn" onclick="joinRoom()">Vào phòng</button>
     <button id="dealBtn" onclick="deal()">Chia bài</button>
     <button id="fullscreenBtn" onclick="toggleFullScreen()">Toàn màn hình</button>
-    <button id="refreshBtn" onclick="refreshPage()">Refresh</button>
   </div>
 
     <button id="queueToggle">Hàng chờ ▾</button>
@@ -315,12 +314,6 @@
       const amount = document.getElementById('bankAmountInput').value;
       socket.emit('bankRepay', { room: roomName, amount: amount });
     });
-
-    function refreshPage() {
-      if (roomName) socket.emit('leaveRoom', roomName);
-      // small delay to allow event to send, then reload
-      setTimeout(() => { location.reload(); }, 150);
-    }
 
     // treat browser refresh/close as leaving the room (best-effort)
     window.addEventListener('beforeunload', () => {
