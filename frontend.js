@@ -2,8 +2,8 @@ const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
 const sendChatBtn = document.getElementById('send-chat');
 
-if (typeof socket !== 'undefined') {
-  socket.on('message', (msg) => {
+if (window.socket) {
+  window.socket.on('message', (msg) => {
     if (chatMessages) {
       const msgDiv = document.createElement('div');
       msgDiv.textContent = msg;
@@ -18,7 +18,7 @@ if (sendChatBtn && chatInput) {
   sendChatBtn.addEventListener('click', () => {
     const msg = chatInput.value.trim();
     if (msg && window.roomName) {
-      socket.emit('chatMessage', { room: window.roomName, message: msg });
+      window.socket.emit('chatMessage', { room: window.roomName, message: msg });
       chatInput.value = '';
     }
   });
@@ -35,7 +35,7 @@ if (endGameBtn) {
     if (window.confirm(message)) {
       // Gửi yêu cầu kết thúc ván lên server. 
       // Đảm bảo biến roomName đã được định nghĩa khi bạn tham gia phòng.
-      socket.emit('endGame', window.roomName || null); 
+      window.socket.emit('endGame', window.roomName || null); 
     }
   });
 }

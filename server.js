@@ -291,6 +291,13 @@ function emitSeatUpdate(roomName) {
 io.on("connection", (socket) => {
   console.log("Người chơi kết nối:", socket.id.slice(0,6));
 
+  socket.on('chatMessage', ({ room, message }) => {
+    if (!room || !rooms[room]) return;
+    const r = rooms[room];
+    const name = r.displayNames[socket.id] || socket.id.slice(0, 6);
+    io.to(room).emit('message', `${name}: ${message}`);
+  });
+
   socket.on("joinRoom", (room) => {
       // room may be a string or object {room,name}
       let roomName = null;

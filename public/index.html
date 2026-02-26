@@ -131,7 +131,8 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io();
+    window.socket = io();
+    const socket = window.socket;
     var myId = null;
     var roomName = null;
     window.__showdownHands = null;
