@@ -11,7 +11,7 @@
     .table-area{ position:relative; width:700px; height:700px; margin:20px auto; }
     .table{ position:absolute; left:50%; top:50%; width:300px; height:300px; margin-left:-150px; margin-top:-150px; border-radius:50%; background:#2e7d32; box-shadow:0 8px 20px rgba(0,0,0,0.6); display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:24px; font-weight:bold; text-align:center; color:#ffd54f; text-shadow: 1px 1px 2px #000; }
     .seats{ position:absolute; left:50%; top:50%; width:0; height:0; }
-    .seat{ position:absolute; left:50%; top:50%; width:120px; height:54px; margin-left:-60px; margin-top:-27px; background:#fff; color:#000; border-radius:8px; display:flex; flex-direction:column; align-items:center; justify-content:center; box-shadow:0 4px 8px rgba(0,0,0,0.3); }
+    .seat{ position:absolute; left:50%; top:50%; width:120px; height:54px; margin-left:-60px; margin-top:-27px; background:#fff; color:#000; border-radius:8px; display:flex; flex-direction:column; align-items:center; justify-content:center; box-shadow:0 4px 8px rgba(0,0,0,0.3); border: 2px solid transparent; transition: border-color 0.3s; }
     .seat .name{ font-weight:600 }
     .seat .role{ font-size:12px; color:#333; margin-top:4px }
     .seat .balance{ font-size:12px; color:#333; margin-top:4px }
@@ -67,6 +67,25 @@
     }
     .chat-controls { display: flex; padding: 5px; border-top: 1px solid #333; background: #222; }
     #chat-input { flex: 1; padding: 6px; background: #333; color: #fff; border: 1px solid #444; border-radius: 4px; }
+
+    @keyframes pulse-turn {
+      0% { box-shadow: 0 0 0 0 rgba(255, 235, 59, 0.7); border-color: #ffeb3b; }
+      70% { box-shadow: 0 0 0 10px rgba(255, 235, 59, 0); border-color: #ffeb3b; }
+      100% { box-shadow: 0 0 0 0 rgba(255, 235, 59, 0); border-color: #ffeb3b; }
+    }
+    .seat.active-turn {
+      border-color: #ffeb3b !important;
+      animation: pulse-turn 1.5s infinite;
+      z-index: 100;
+    }
+    @keyframes blink-text {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.05); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    .blink-anim {
+      animation: blink-text 1s infinite;
+    }
   </style>
 </head>
 <body>
@@ -381,6 +400,7 @@
       });
       // update round buttons enable state based on seating
       updateRoundButtons();
+      updateTurnHighlight();
     });
 
     socket.on('rolesUpdate', (roles) => {
@@ -398,7 +418,7 @@
       const turnLabel = window.__currentTurnLabel;
       let html = pot > 0 ? `<div>POT: ${pot}</div>` : "";
       if (window.__roomStarted && turnLabel) {
-        html = `<div style="font-size:16px; color:#fff; margin-bottom:8px; text-shadow:none; font-weight:normal;">Lượt: ${turnLabel}</div>` + html;
+        html = `<div class="blink-anim" style="font-size:25px; color:#ff5005; margin-bottom:10px; text-shadow: 1px 1px 2px #000; font-weight:bold;">Lượt của: ${turnLabel}</div>` + html;
       }
       if (cards.length > 0) {
         html += `<div style="margin-top:10px; display:flex; gap:5px; justify-content:center;">`;
@@ -454,6 +474,7 @@
         }
       });
       updateRoundButtons();
+      updateTurnHighlight();
     });
 
     socket.on('turnUpdate', ({ currentTurn, currentLabel, currentMaxBet }) => {
@@ -468,6 +489,7 @@
       if (!p.textContent) return;
       container.insertBefore(p, container.firstChild);
       updateRoundButtons();
+      updateTurnHighlight();
     });
 
     socket.on('gameStarted', ({ dealerId, dealerLabel, sb, bb }) => {
@@ -605,6 +627,19 @@
       document.getElementById('allinBtn').style.display = 'none';
       document.getElementById('foldBtn').style.display = 'none';
       window.__inRound1 = false;
+    }
+
+    function updateTurnHighlight() {
+      const seats = window.__lastSeatUpdate || [];
+      const currentTurn = window.__currentTurn;
+      document.querySelectorAll('.seat').forEach((el, i) => {
+        const seatData = seats[i];
+        if (seatData && seatData.id === currentTurn) {
+          el.classList.add('active-turn');
+        } else {
+          el.classList.remove('active-turn');
+        }
+      });
     }
 
     function updateRoundButtons() {
