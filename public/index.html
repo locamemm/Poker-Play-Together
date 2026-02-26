@@ -127,6 +127,8 @@
       </div>
   </div>
 
+  <div id="messages"></div>
+
   <div id="hands"></div>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -151,7 +153,7 @@
 
     // server will emit joinAccepted or joinError
     socket.on('joinAccepted', (roomNameAccepted) => {
-      roomName = roomNameAccepted;
+      window.roomName = roomNameAccepted;
       // show seats/table
       document.querySelector('.table-area').style.display = 'block';
       // disable room input and join button to avoid switching
@@ -545,6 +547,7 @@
     });
 
     socket.on('gameSummary', (summary) => {
+      console.log('Game Summary:', summary);
       const container = document.getElementById('messages');
       const div = document.createElement('div');
       div.style.background = '#1a237e';
@@ -660,7 +663,5 @@
     });
   </script>
   <script src="frontend.js"></script>
-</body>
-</html>
 </body>
 </html>

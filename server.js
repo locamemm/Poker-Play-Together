@@ -10,6 +10,11 @@ const io = new Server(server);
 
 app.use(express.static("public")); // nơi chứa frontend
 
+// Serve frontend.js from root
+app.get('/frontend.js', (req, res) => {
+  res.sendFile(__dirname + '/frontend.js');
+});
+
 // Quản lý người chơi và bàn poker
 let rooms = {};
 

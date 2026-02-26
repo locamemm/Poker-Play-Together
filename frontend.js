@@ -1,3 +1,5 @@
+console.log("Frontend script loaded");
+
 const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
 const sendChatBtn = document.getElementById('send-chat');
@@ -20,6 +22,8 @@ if (sendChatBtn && chatInput) {
     if (msg && window.roomName) {
       window.socket.emit('chatMessage', { room: window.roomName, message: msg });
       chatInput.value = '';
+    } else if (!window.roomName) {
+      alert("Vui lòng vào phòng trước khi chat!");
     }
   });
   chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChatBtn.click(); });
