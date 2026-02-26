@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Poker Online</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; background:#0b1220; color:#fff; }
+    .controls { text-align:center; margin:16px 0; }
+    input#room{ padding:8px; border-radius:4px; border:1px solid #ccc; }
+    button { margin:0 6px; padding:8px 12px; border-radius:4px; border:none; background:#1976d2; color:#fff; cursor:pointer }
+    .table-area{ position:relative; width:700px; height:700px; margin:20px auto; }
+    .table{ position:absolute; left:50%; top:50%; width:300px; height:300px; margin-left:-150px; margin-top:-150px; border-radius:50%; background:#2e7d32; box-shadow:0 8px 20px rgba(0,0,0,0.6); display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:24px; font-weight:bold; text-align:center; color:#ffd54f; text-shadow: 1px 1px 2px #000; }
+    .seats{ position:absolute; left:50%; top:50%; width:0; height:0; }
+    .seat{ position:absolute; left:50%; top:50%; width:120px; height:54px; margin-left:-60px; margin-top:-27px; background:#fff; color:#000; border-radius:8px; display:flex; flex-direction:column; align-items:center; justify-content:center; box-shadow:0 4px 8px rgba(0,0,0,0.3); }
+    .seat .name{ font-weight:600 }
+    .seat .role{ font-size:12px; color:#333; margin-top:4px }
+    .seat .balance{ font-size:12px; color:#333; margin-top:4px }
+    .seat .bet{ font-size:12px; color:#e65100; font-weight:bold; margin-top:2px }
+    .seat .cards { position: absolute; right: -65px; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; pointer-events: none; }
+    .card { width: 25px; height: 35px; background: #fff; border: 1px solid #333; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: bold; color: #000; box-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+    .card.back { background: linear-gradient(135deg, #1976d2 25%, #1565c0 25%, #1565c0 50%, #1976d2 50%, #1976d2 75%, #1565c0 75%, #1565c0 100%); background-size: 10px 10px; color: transparent; }
+    .seat:nth-child(1){ transform: rotate(0deg)   translate(260px) rotate(0deg); }
+    .seat:nth-child(2){ transform: rotate(45deg)  translate(260px) rotate(-45deg); }
+    .seat:nth-child(3){ transform: rotate(90deg)  translate(260px) rotate(-90deg); }
+    .seat:nth-child(4){ transform: rotate(135deg) translate(260px) rotate(-135deg); }
+    .seat:nth-child(5){ transform: rotate(180deg) translate(260px) rotate(-180deg); }
+    .seat:nth-child(6){ transform: rotate(225deg) translate(260px) rotate(-225deg); }
+    .seat:nth-child(7){ transform: rotate(270deg) translate(260px) rotate(-270deg); }
+    .seat:nth-child(8){ transform: rotate(315deg) translate(260px) rotate(-315deg); }
+    #messages,#pot,#hands{ max-width:700px; margin:8px auto; color:#fff }
+    .seat.occupied{ background:#d32f2f; color:#fff; cursor:default }
+    .seat.me{ background:#ffd54f; color:#000 }
+    .start-box{ display:inline-block; padding:14px 22px; border:2px solid #ffd54f; border-radius:8px; background:linear-gradient(180deg,#ffd54f11,#ffd54f05); color:#ffd54f; font-weight:700; cursor:pointer; }
+    .start-box[data-state="started"]{ border-color:#d32f2f; color:#d32f2f }
+    .action-btn{ background:#424242; color:#fff; border:none; cursor:pointer }
+    .action-btn:disabled{ opacity:0.5; cursor:default }
+    /* Queue panel */
+    #queueToggle { position:fixed; right:20px; top:80px; background:#1976d2; color:#fff; border:none; padding:8px 10px; border-radius:6px; cursor:pointer; z-index:2000 }
+    #queuePanel { position:fixed; right:20px; top:120px; width:260px; max-height:60vh; overflow:auto; background:#111; border:1px solid #333; padding:12px; border-radius:8px; display:none; z-index:2000 }
+    #queuePanel h3{ margin:0 0 8px 0; font-size:16px }
+    #queuePanel ul{ list-style:none; padding:0; margin:0 }
+    #queuePanel li{ padding:6px 4px; border-bottom:1px solid #222 }
+  </style>
+</head>
+<body>
+  <h1 style="text-align:center; margin-top:12px">Poker Online</h1>
+
+    <div class="controls">
+    <input id="room" placeholder="Tên phòng">
+    <input id="playerName" placeholder="Tên người chơi" style="margin-left:8px; padding:8px; border-radius:4px;">
+    <button id="joinBtn" onclick="joinRoom()">Vào phòng</button>
+    <button id="dealBtn" onclick="deal()">Chia bài</button>
+    <button id="refreshBtn" onclick="refreshPage()">Refresh</button>
+  </div>
+
+    <button id="queueToggle">Hàng chờ ▾</button>
+    <div id="queuePanel">
+      <h3>Hàng chờ</h3>
+      <ul id="queueList"></ul>
+    </div>
+    <button id="bankToggle" style="position:fixed; right:20px; top:200px; background:#1976d2; color:#fff; border:none; padding:8px 10px; border-radius:6px; cursor:pointer; z-index:2000">Ngân hàng ▾</button>
+    <div id="bankPanel" style="position:fixed; right:20px; top:240px; width:260px; max-height:60vh; overflow:auto; background:#111; border:1px solid #333; padding:12px; border-radius:8px; display:none; z-index:2000">
+      <h3>Ngân hàng</h3>
+      <div style="margin-bottom:8px;">
+        <input type="number" id="bankAmountInput" placeholder="Số tiền (bội số 5)" style="width:100%; margin-bottom:8px; padding:6px; box-sizing:border-box; background:#222; color:#fff; border:1px solid #444; border-radius:4px;">
+        <button id="bankBorrowBtn" style="margin-right:8px;">Vay</button><button id="bankRepayBtn">Trả nợ</button>
+      </div>
+      <ul id="bankList" style="list-style:none; padding:0; margin:0"></ul>
+    </div>
+
+    <div class="table-area" aria-label="Poker table" style="display:none;">
+      <div style="text-align:center; margin-bottom:8px;">
+        <div id="tableStartBox" class="start-box" data-state="stopped">Start</div>
+        <div id="roundButtons" style="display:inline-block; margin-left:12px; vertical-align:middle;">
+          <button id="checkBtn" class="action-btn" style="display:none; margin-left:6px; padding:8px 10px; border-radius:6px;">Check</button>
+          <button id="raiseBtn" class="action-btn" style="display:none; margin-left:6px; padding:8px 10px; border-radius:6px;">Tố</button>
+          <button id="allinBtn" class="action-btn" style="display:none; margin-left:6px; padding:8px 10px; border-radius:6px;">All in</button>
+          <button id="foldBtn" class="action-btn" style="display:none; margin-left:6px; padding:8px 10px; border-radius:6px;">Bỏ bài</button>
+        </div>
+      </div>
+      <div class="table" id="tableCenter"></div>
+    <div class="seats" id="seats">
+      <div class="seat"><span class="name">Seat 1</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
+      <div class="seat"><span class="name">Seat 2</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
+      <div class="seat"><span class="name">Seat 3</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
+      <div class="seat"><span class="name">Seat 4</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
+      <div class="seat"><span class="name">Seat 5</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
+      <div class="seat"><span class="name">Seat 6</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
+      <div class="seat"><span class="name">Seat 7</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
+      <div class="seat"><span class="name">Seat 8</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
+    </div>
+  </div>
+
+  <div id="messages"></div>
+  <div id="hands"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let myId = null;
+    let currentRoom = null;
+    window.__showdownHands = null;
+    window.__defaultBigBlind = null;
+
+    socket.on('connect', () => { myId = socket.id; });
+
+    function joinRoom() {
+      const room = document.getElementById("room").value.trim();
+        const name = document.getElementById("playerName").value.trim();
+        if (!room) return alert('Nhập tên phòng trước');
+        if (!name) return alert('Vui lòng nhập tên người chơi');
+        // emit join request and wait for server acceptance
+        socket.emit("joinRoom", { room, name });
+    }
+
+    // server will emit joinAccepted or joinError
+    socket.on('joinAccepted', (roomName) => {
+      currentRoom = roomName;
+      // show seats/table
+      document.querySelector('.table-area').style.display = 'block';
+      // disable room input and join button to avoid switching
+      document.getElementById('room').disabled = true;
+      document.getElementById('playerName').disabled = true;
+      document.getElementById('joinBtn').disabled = true;
+    });
+    socket.on('joinError', (msg) => {
+      alert(msg);
+    });
+
+    // queue toggle
+    document.getElementById('queueToggle').addEventListener('click', () => {
+      const panel = document.getElementById('queuePanel');
+      if (panel.style.display === 'none' || panel.style.display === '') {
+        panel.style.display = 'block';
+        document.getElementById('queueToggle').textContent = 'Hàng chờ ▴';
+      } else {
+        panel.style.display = 'none';
+        document.getElementById('queueToggle').textContent = 'Hàng chờ ▾';
+      }
+    });
+
+    // update queue list from server
+    socket.on('playerList', (list) => {
+      const ul = document.getElementById('queueList');
+      ul.innerHTML = '';
+      list.forEach(player => {
+        const li = document.createElement('li');
+        li.textContent = `${player.name}: ${player.balance}`;
+        ul.appendChild(li);
+      });
+    });
+
+    // bank toggle
+    document.getElementById('bankToggle').addEventListener('click', () => {
+      const panel = document.getElementById('bankPanel');
+      if (panel.style.display === 'none' || panel.style.display === '') {
+        panel.style.display = 'block';
+        document.getElementById('bankToggle').textContent = 'Ngân hàng ▴';
+      } else {
+        panel.style.display = 'none';
+        document.getElementById('bankToggle').textContent = 'Ngân hàng ▾';
+      }
+    });
+
+    socket.on('bankUpdate', (list) => {
+      const ul = document.getElementById('bankList');
+      ul.innerHTML = '';
+      list.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = `${item.name}: ${item.balance} (đã vay ${item.loans})`;
+        ul.appendChild(li);
+      });
+    });
+
+    document.getElementById('bankBorrowBtn').addEventListener('click', () => {
+      if (!currentRoom) return alert('Vui lòng vào phòng');
+      const amount = document.getElementById('bankAmountInput').value;
+      socket.emit('bankBorrow', { room: currentRoom, amount: amount });
+    });
+    document.getElementById('bankRepayBtn').addEventListener('click', () => {
+      if (!currentRoom) return alert('Vui lòng vào phòng');
+      const amount = document.getElementById('bankAmountInput').value;
+      socket.emit('bankRepay', { room: currentRoom, amount: amount });
+    });
+
+    function refreshPage() {
+      if (currentRoom) socket.emit('leaveRoom', currentRoom);
+      // small delay to allow event to send, then reload
+      setTimeout(() => { location.reload(); }, 150);
+    }
+
+    // treat browser refresh/close as leaving the room (best-effort)
+    window.addEventListener('beforeunload', () => {
+      if (currentRoom) {
+        try { socket.emit('leaveRoom', currentRoom); } catch (e) { }
+      }
+    });
+
+    function joinSeat(index){
+      if (!currentRoom) return alert('Vui lòng vào phòng trước');
+      socket.emit('joinSeat', { room: currentRoom, seatIndex: index });
+    }
+
+    function deal() {
+      if (!currentRoom) return alert('Vui lòng vào phòng trước');
+      socket.emit("dealCards", currentRoom);
+    }
+
+    function bet() {
+      if (!currentRoom) return alert('Vui lòng vào phòng trước');
+      socket.emit("bet", { room: currentRoom, amount: 10 });
+    }
+
+    // make seats clickable (use currentRoom inside joinSeat)
+    document.querySelectorAll('.seat').forEach((el, i) => {
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', () => joinSeat(i));
+    });
+
+    // start table click (only dealer allowed)
+    document.getElementById('tableStartBox').addEventListener('click', () => {
+      if (!currentRoom) return alert('Vui lòng vào phòng trước');
+      // ensure only dealer can trigger start/end
+      if (window.__dealerId && myId !== window.__dealerId) {
+        alert('Chỉ Dealer mới có thể thao tác Start/End');
+        return;
+      }
+      const btn = document.getElementById('tableStartBox');
+      if (btn.dataset.state === 'started') {
+        socket.emit('endGame', currentRoom);
+      } else {
+        if (!window.__defaultBigBlind) {
+          const bigBlind = prompt("Nhập số tiền Big Blind (Small Blind sẽ bằng một nửa):", "10");
+          if (bigBlind !== null && bigBlind.trim() !== "") {
+            socket.emit('startGame', { room: currentRoom, bigBlind: bigBlind.trim() });
+          }
+        } else {
+          socket.emit('startGame', { room: currentRoom });
+        }
+      }
+    });
+
+    socket.on("message", (msg) => {
+      const container = document.getElementById("messages");
+      // If this is a "sit" message, clear previous logs first
+      if (typeof msg === 'string' && msg.includes('ngồi ghế')) {
+        container.innerHTML = '';
+      }
+      const p = document.createElement('p');
+      p.textContent = msg;
+      // newest messages at the top
+      container.insertBefore(p, container.firstChild);
+    });
+
+    socket.on("updatePot", (pot) => {
+      window.__currentPot = pot;
+      updateTableCenter();
+    });
+
+    socket.on('seatError', (err) => alert(err));
+
+    socket.on('seatUpdate', (seats) => {
+      const seatEls = document.querySelectorAll('.seat');
+      // store last seat update for interactivity checks
+      window.__lastSeatUpdate = seats;
+      seatEls.forEach((el, i) => {
+        const occupantObj = seats[i];
+        const nameSpan = el.querySelector('.name');
+        const roleDiv = el.querySelector('.role');
+        const balanceDiv = el.querySelector('.balance');
+        const betDiv = el.querySelector('.bet');
+        const cardsDiv = el.querySelector('.cards');
+        balanceDiv.textContent = '';
+        if (betDiv) betDiv.textContent = '';
+        if (cardsDiv) cardsDiv.innerHTML = '';
+        el.classList.remove('occupied','me');
+        el.title = '';
+        if (!occupantObj) {
+          nameSpan.textContent = `Seat ${i+1}`;
+          roleDiv.textContent = '';
+          // if the room's game has started, disallow sitting to empty seats
+          if (window.__roomStarted) {
+            el.style.pointerEvents = 'none';
+            el.style.cursor = 'default';
+          } else {
+            el.style.pointerEvents = 'auto';
+            el.style.cursor = 'pointer';
+          }
+        } else {
+          const occupantId = occupantObj.id;
+          const label = occupantObj.displayName || occupantObj.label || '';
+          const balance = occupantObj.balance || 0;
+          const role = occupantObj.role || '';
+          const bet = occupantObj.bet || 0;
+          const cardCount = occupantObj.cardCount || 0;
+          const folded = occupantObj.folded || false;
+          el.title = occupantId;
+          roleDiv.textContent = role;
+
+          // Hiệu ứng làm mờ khi bỏ bài
+          el.style.opacity = folded ? '0.5' : '1';
+
+          if (betDiv) betDiv.textContent = bet > 0 ? `Bet: ${bet}` : '';
+          
+          if (cardsDiv && (window.__cardsDealt || window.__showdownHands)) {
+            // Nếu đã bỏ bài và không phải lúc ngửa bài cuối ván thì ẩn bài
+            if (folded && !window.__showdownHands) {
+              cardsDiv.innerHTML = '';
+            } else {
+              const showdownCards = window.__showdownHands ? window.__showdownHands[occupantId] : null;
+            if (showdownCards) {
+              showdownCards.forEach(c => {
+                const cardEl = document.createElement('div');
+                cardEl.className = 'card';
+                const color = (c.includes('♥') || c.includes('♦')) ? '#d32f2f' : '#000';
+                cardEl.style.color = color;
+                cardEl.textContent = c;
+                cardsDiv.appendChild(cardEl);
+              });
+            } else if (occupantId === myId && window.__myCards) {
+              window.__myCards.slice(0, cardCount).forEach(c => {
+                const cardEl = document.createElement('div');
+                cardEl.className = 'card';
+                const color = (c.includes('♥') || c.includes('♦')) ? '#d32f2f' : '#000';
+                cardEl.style.color = color;
+                cardEl.textContent = c;
+                cardsDiv.appendChild(cardEl);
+              });
+            } else if (window.__cardsDealt) {
+              for(let j=0; j<cardCount; j++) {
+                const cardEl = document.createElement('div');
+                cardEl.className = 'card back';
+                cardEl.textContent = '??';
+                cardsDiv.appendChild(cardEl);
+              }
+            }
+            }
+          }
+          if (occupantId === myId) {
+            nameSpan.textContent = `You (${label})`;
+            balanceDiv.textContent = `Balance: ${balance}`;
+            el.classList.add('me');
+            // allow clicking own seat to leave
+            // if game started, disallow leaving
+            if (window.__roomStarted) { el.style.pointerEvents = 'none'; el.style.cursor = 'default'; }
+            else { el.style.pointerEvents = 'auto'; el.style.cursor = 'pointer'; }
+          } else {
+            nameSpan.textContent = label;
+            balanceDiv.textContent = `Balance: ${balance}`;
+            el.classList.add('occupied');
+            el.style.pointerEvents = 'none';
+            el.style.cursor = 'default';
+          }
+        }
+      });
+      // update round buttons enable state based on seating
+      updateRoundButtons();
+    });
+
+    socket.on('rolesUpdate', (roles) => {
+      const seatEls = document.querySelectorAll('.seat');
+      seatEls.forEach((el, i) => {
+        const roleObj = roles[i];
+        const roleDiv = el.querySelector('.role');
+        roleDiv.textContent = roleObj && roleObj.role ? roleObj.role : '';
+      });
+    });
+
+    function updateTableCenter() {
+      const pot = window.__currentPot || 0;
+      const cards = window.__communityCards || [];
+      const turnLabel = window.__currentTurnLabel;
+      let html = pot > 0 ? `<div>POT: ${pot}</div>` : "";
+      if (window.__roomStarted && turnLabel) {
+        html = `<div style="font-size:16px; color:#fff; margin-bottom:8px; text-shadow:none; font-weight:normal;">Lượt: ${turnLabel}</div>` + html;
+      }
+      if (cards.length > 0) {
+        html += `<div style="margin-top:10px; display:flex; gap:5px; justify-content:center;">`;
+        cards.forEach(c => {
+          const color = (c.includes('♥') || c.includes('♦')) ? '#d32f2f' : '#000';
+          html += `<div style="background:#fff; color:${color}; padding:4px 8px; border-radius:4px; min-width:35px; border:1px solid #333; font-size:20px; box-shadow:0 2px 4px rgba(0,0,0,0.5)">${c}</div>`;
+        });
+        html += `</div>`;
+      }
+      document.getElementById("tableCenter").innerHTML = html;
+    }
+
+    socket.on('gameState', ({ started, dealer, currentTurn, currentMaxBet, communityCards, cardsDealt, defaultBigBlind }) => {
+      // handle initial/join state: started and dealer id
+      window.__roomStarted = !!started;
+      window.__dealerId = dealer || null;
+      window.__currentTurn = currentTurn || null;
+      window.__currentMaxBet = currentMaxBet || 0;
+      window.__communityCards = communityCards || [];
+      window.__cardsDealt = !!cardsDealt;
+      window.__defaultBigBlind = defaultBigBlind || null;
+      if (!currentTurn) window.__currentTurnLabel = null;
+      updateTableCenter();
+      // update start box enabled only for dealer when not started
+      const btn = document.getElementById('tableStartBox');
+      if (window.__roomStarted) {
+        btn.textContent = 'End game now';
+        btn.dataset.state = 'started';
+        // only dealer can click End (but End is allowed for dealer only originally); keep clickable for dealer
+        btn.style.pointerEvents = (myId === window.__dealerId) ? 'auto' : 'none';
+        btn.style.opacity = (myId === window.__dealerId) ? '1' : '0.6';
+      } else {
+        btn.textContent = 'Start';
+        btn.dataset.state = 'stopped';
+        btn.style.pointerEvents = (myId === window.__dealerId) ? 'auto' : 'none';
+        btn.style.opacity = (myId === window.__dealerId) ? '1' : '0.6';
+      }
+      // control Deal button: only dealer can deal AND only when game started
+      const dealBtn = document.getElementById('dealBtn');
+      if (dealBtn) {
+        const enabled = (myId === window.__dealerId) && !!started;
+        dealBtn.style.pointerEvents = enabled ? 'auto' : 'none';
+        dealBtn.style.opacity = enabled ? '1' : '0.6';
+      }
+      // update seat interactivity: prevent leaving if started
+      document.querySelectorAll('.seat').forEach((el, i) => {
+        const occupantObj = (typeof window.__lastSeatUpdate !== 'undefined') ? window.__lastSeatUpdate[i] : null;
+        if (!occupantObj) return;
+        const occupantId = occupantObj.id;
+        if (occupantId === myId && window.__roomStarted) {
+          el.style.pointerEvents = 'none';
+          el.style.cursor = 'default';
+        }
+      });
+      updateRoundButtons();
+    });
+
+    socket.on('turnUpdate', ({ currentTurn, currentLabel, currentMaxBet }) => {
+      window.__currentTurn = currentTurn || null;
+      window.__currentMaxBet = currentMaxBet || 0;
+      window.__currentTurnLabel = currentLabel || null;
+      updateTableCenter();
+      // show a short message for whose turn it is
+      const container = document.getElementById('messages');
+      const p = document.createElement('p');
+      p.textContent = currentLabel ? `Lượt: ${currentLabel}` : (window.__roomStarted ? 'Vòng kết thúc' : '');
+      if (!p.textContent) return;
+      container.insertBefore(p, container.firstChild);
+      updateRoundButtons();
+    });
+
+    socket.on('gameStarted', ({ dealerId, dealerLabel, sb, bb }) => {
+      // clear previous logs and show single start log
+      const container = document.getElementById('messages');
+      container.innerHTML = '';
+      const p = document.createElement('p');
+      p.textContent = `Game started. Blinds: ${sb}/${bb}. Dealer: ${dealerLabel}`;
+      container.insertBefore(p, container.firstChild);
+      // toggle Start -> End
+      const btn = document.getElementById('tableStartBox');
+      btn.textContent = 'End game now';
+      btn.dataset.state = 'started';
+      window.__roomStarted = true;
+      window.__dealerId = dealerId || null;
+      window.__myCards = null;
+      window.__cardsDealt = false;
+      window.__showdownHands = null;
+      window.__currentTurnLabel = null;
+      window.__defaultBigBlind = bb;
+      updateTableCenter();
+      // only dealer may click
+      btn.style.pointerEvents = (myId === window.__dealerId) ? 'auto' : 'none';
+      btn.style.opacity = (myId === window.__dealerId) ? '1' : '0.6';
+      // deal button: dealer only (gameStarted ensures started===true)
+      const dealBtn = document.getElementById('dealBtn');
+      if (dealBtn) {
+        const enabled = (myId === window.__dealerId) && true;
+        dealBtn.style.pointerEvents = enabled ? 'auto' : 'none';
+        dealBtn.style.opacity = enabled ? '1' : '0.6';
+      }
+      // prevent occupant from leaving
+      document.querySelectorAll('.seat').forEach((el, i) => {
+        const occupantObj = window.__lastSeatUpdate ? window.__lastSeatUpdate[i] : null;
+        if (!occupantObj) return;
+        if (occupantObj.id === myId) { el.style.pointerEvents = 'none'; el.style.cursor = 'default'; }
+      });
+    });
+
+    socket.on('gameEnded', ({ msg }) => {
+      // show end message and reset Start button
+      const container = document.getElementById('messages');
+      const p = document.createElement('p');
+      p.textContent = msg || 'Game ended';
+      container.insertBefore(p, container.firstChild);
+      const btn = document.getElementById('tableStartBox');
+      btn.textContent = 'Start';
+      btn.dataset.state = 'stopped';
+      // keep role labels visible (do not clear on end)
+      // mark not started and re-enable seat clicks for own seat
+      window.__roomStarted = false;
+      window.__cardsDealt = false;
+      window.__showdownHands = null;
+      window.__myCards = null;
+      window.__currentTurnLabel = null;
+      updateTableCenter();
+      // allow own seat to be clickable again
+      document.querySelectorAll('.seat').forEach((el, i) => {
+        const occ = window.__lastSeatUpdate ? window.__lastSeatUpdate[i] : null;
+        if (occ && occ.id === myId) { el.style.pointerEvents = 'auto'; el.style.cursor = 'pointer'; }
+      });
+      // set Start button enabled only for dealer
+      btn.style.pointerEvents = (myId === window.__dealerId) ? 'auto' : 'none';
+      btn.style.opacity = (myId === window.__dealerId) ? '1' : '0.6';
+      // after game end, disable Deal (only allowed during started)
+      const dealBtn = document.getElementById('dealBtn');
+      if (dealBtn) {
+        dealBtn.style.pointerEvents = 'none';
+        dealBtn.style.opacity = '0.6';
+      }
+      // hide round buttons
+      hideRoundButtons();
+    });
+
+    socket.on('showdown', (hands) => {
+      window.__showdownHands = hands;
+    });
+
+    socket.on('gameSummary', (summary) => {
+      const container = document.getElementById('messages');
+      const div = document.createElement('div');
+      div.style.background = '#1a237e';
+      div.style.padding = '12px';
+      div.style.borderRadius = '8px';
+      div.style.marginTop = '10px';
+      div.style.border = '1px solid #3f51b5';
+      div.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
+      
+      let html = '<h4 style="margin:0 0 10px 0; color:#ffd54f; text-align:center; border-bottom:1px solid #3f51b5; padding-bottom:5px">TỔNG KẾT VÁN BÀI</h4>';
+      html += '<table style="width:100%; font-size:14px; border-collapse:collapse">';
+      summary.sort((a,b) => b.net - a.net).forEach(item => {
+        const color = item.net > 0 ? '#4caf50' : (item.net < 0 ? '#f44336' : '#fff');
+        const sign = item.net > 0 ? '+' : '';
+        html += `<tr style="border-bottom:1px solid #222"><td style="padding:6px 0">${item.name}</td><td style="padding:6px 0; text-align:right; color:${color}; font-weight:bold">${sign}${item.net}</td></tr>`;
+      });
+      html += '</table>';
+      div.innerHTML = html;
+      container.insertBefore(div, container.firstChild);
+    });
+
+    socket.on("deal", (data) => {
+      // when full deal broadcast received, enter Round 1 and show action buttons
+      window.__inRound1 = true;
+      showRoundButtons();
+    });
+
+    // receive private deal (only for this player)
+    socket.on('privateDeal', ({ display, cards }) => {
+      window.__myCards = cards;
+      const container = document.getElementById('messages');
+      // clear previous deal logs so only the current deal is shown
+      container.innerHTML = '';
+      const p = document.createElement('p');
+      p.textContent = `Your cards (${display}): ${cards.join(' ')}`;
+      container.insertBefore(p, container.firstChild);
+    });
+
+    function isSeated() {
+      if (!window.__lastSeatUpdate) return false;
+      return window.__lastSeatUpdate.some(s => s && s.id === myId);
+    }
+
+    function showRoundButtons() {
+      document.getElementById('checkBtn').style.display = 'inline-block';
+      document.getElementById('raiseBtn').style.display = 'inline-block';
+      document.getElementById('allinBtn').style.display = 'inline-block';
+      document.getElementById('foldBtn').style.display = 'inline-block';
+      updateRoundButtons();
+    }
+
+    function hideRoundButtons() {
+      document.getElementById('checkBtn').style.display = 'none';
+      document.getElementById('raiseBtn').style.display = 'none';
+      document.getElementById('allinBtn').style.display = 'none';
+      document.getElementById('foldBtn').style.display = 'none';
+      window.__inRound1 = false;
+    }
+
+    function updateRoundButtons() {
+      const seated = isSeated();
+      const isMyTurn = (window.__currentTurn && myId === window.__currentTurn);
+      const enabled = !!window.__inRound1 && seated && isMyTurn;
+      
+      const mySeat = window.__lastSeatUpdate ? window.__lastSeatUpdate.find(s => s && s.id === myId) : null;
+      const myCurrentBet = mySeat ? (mySeat.bet || 0) : 0;
+      const currentMaxBet = window.__currentMaxBet || 0;
+      const diff = currentMaxBet - myCurrentBet;
+
+      const checkBtn = document.getElementById('checkBtn');
+      if (diff > 0) {
+        checkBtn.textContent = 'Cân cửa';
+        checkBtn.disabled = !enabled;
+      } else {
+        checkBtn.textContent = 'Check';
+        checkBtn.disabled = !enabled;
+      }
+
+      ['checkBtn','raiseBtn','allinBtn','foldBtn'].forEach(id => {
+        const b = document.getElementById(id);
+        if (!b) return;
+        b.style.pointerEvents = enabled ? 'auto' : 'none';
+        b.style.opacity = enabled ? '1' : '0.6';
+      });
+    }
+
+    // wire action clicks
+    document.getElementById('checkBtn').addEventListener('click', () => {
+      if (!currentRoom) return;
+      const action = document.getElementById('checkBtn').textContent;
+      socket.emit('playerAction', { room: currentRoom, action: action });
+      // disable until next opportunity
+      updateRoundButtons();
+    });
+    document.getElementById('raiseBtn').addEventListener('click', () => {
+      if (!currentRoom) return;
+      const mySeat = window.__lastSeatUpdate ? window.__lastSeatUpdate.find(s => s && s.id === myId) : null;
+      const myCurrentBet = mySeat ? (mySeat.bet || 0) : 0;
+      const minAdd = Math.max(1, (window.__currentMaxBet || 0) - myCurrentBet + 1);
+      const amount = prompt(`Nhập số tiền tố thêm (Tối thiểu để vượt mức cược hiện tại: ${minAdd})`);
+      socket.emit('playerAction', { room: currentRoom, action: 'Raise', amount });
+      updateRoundButtons();
+    });
+    document.getElementById('allinBtn').addEventListener('click', () => {
+      if (!currentRoom) return;
+      socket.emit('playerAction', { room: currentRoom, action: 'All in' });
+      updateRoundButtons();
+    });
+    document.getElementById('foldBtn').addEventListener('click', () => {
+      if (!currentRoom) return;
+      socket.emit('playerAction', { room: currentRoom, action: 'Bỏ bài' });
+      updateRoundButtons();
+    });
+  </script>
+</body>
+</html>
