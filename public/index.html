@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Poker Online</title>
   <style>
     body { font-family: Arial, Helvetica, sans-serif; background:#0b1220; color:#fff; }
@@ -132,6 +135,7 @@
     <input id="playerName" placeholder="Tên người chơi" style="margin-left:8px; padding:8px; border-radius:4px;">
     <button id="joinBtn" onclick="joinRoom()">Vào phòng</button>
     <button id="dealBtn" onclick="deal()">Chia bài</button>
+    <button id="fullscreenBtn" onclick="toggleFullScreen()">Toàn màn hình</button>
     <button id="refreshBtn" onclick="refreshPage()">Refresh</button>
   </div>
 
@@ -196,6 +200,16 @@
     window.__defaultBigBlind = null;
 
     socket.on('connect', () => { myId = socket.id; });
+
+    function toggleFullScreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.log(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+        });
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+      }
+    }
 
     function joinRoom() {
       const room = document.getElementById("room").value.trim();
