@@ -293,6 +293,17 @@ function emitSeatUpdate(roomName) {
   io.to(roomName).emit("seatUpdate", info);
 }
 
+function emitBankRequests(roomName) {
+  if (!rooms[roomName]) return;
+  const r = rooms[roomName];
+  const requestsWithNames = (r.bankRequests || []).map(req => {
+    const name = r.displayNames[req.playerId] || req.playerId.slice(0, 6);
+    return { ...req, requesterName: name };
+  });
+  if (r.dealer) io.to(r.dealer).emit('bankRequestsUpdate', requestsWithNames);
+  if (r.host && r.host !== r.dealer) io.to(r.host).emit('bankRequestsUpdate', requestsWithNames);
+}
+
 io.on("connection", (socket) => {
   console.log("Người chơi kết nối:", socket.id.slice(0,6));
 
@@ -317,12 +328,99 @@ io.on("connection", (socket) => {
       if (!rooms[roomName]) {
         rooms[roomName] = { players: [], seats: Array(8).fill(null), playerNumbers: {}, displayNames: {}, roles: {}, dealer: null, host: null, pot: 0, deck: [], balances: {}, loanCounts: {}, bets: {}, totalBets: {}, currentMaxBet: 0, communityCards: [], round: 0, cardsDealt: false, hands: {}, history: [], defaultBigBlind: 0 };
       }
-      // enforce unique display name within the room
-      const existingNames = Object.values(rooms[roomName].displayNames || {});
-      if (existingNames.includes(playerName)) {
-        socket.emit('joinError', 'Tên này đã có trong phòng, vui lòng chọn tên khác');
+      
+      // Kiểm tra xem tên người chơi đã tồn tại chưa (để xử lý kết nối lại)
+      const existingId = Object.keys(rooms[roomName].displayNames).find(id => rooms[roomName].displayNames[id] === playerName);
+      
+      if (existingId) {
+        // Nếu ID cũ vẫn đang nằm trong danh sách kết nối (players), nghĩa là tên bị trùng
+        if (rooms[roomName].players.includes(existingId)) {
+          socket.emit('joinError', 'Tên này đang được sử dụng bởi người chơi khác trong phòng');
+          return;
+        }
+
+        // === LOGIC KẾT NỐI LẠI (RECONNECT) ===
+        const oldId = existingId;
+        const newId = socket.id;
+
+        // Hàm hỗ trợ chuyển đổi dữ liệu từ ID cũ sang ID mới
+        const migrateData = (obj) => {
+          if (obj && Object.prototype.hasOwnProperty.call(obj, oldId)) {
+            obj[newId] = obj[oldId];
+            delete obj[oldId];
+          }
+        };
+
+        migrateData(rooms[roomName].displayNames);
+        migrateData(rooms[roomName].playerNumbers);
+        migrateData(rooms[roomName].roles);
+        migrateData(rooms[roomName].balances);
+        migrateData(rooms[roomName].loanCounts);
+        migrateData(rooms[roomName].bets);
+        migrateData(rooms[roomName].totalBets);
+        migrateData(rooms[roomName].hands);
+        migrateData(rooms[roomName].folded);
+
+        // Cập nhật ghế ngồi
+        const seatIdx = rooms[roomName].seats.indexOf(oldId);
+        if (seatIdx !== -1) {
+          rooms[roomName].seats[seatIdx] = newId;
+          socket.data.seat = seatIdx;
+          socket.data.room = roomName;
+          console.log(`[Reconnect] ${playerName} restored to seat ${seatIdx}`);
+        }
+        socket.data.room = roomName;
+
+        // Cập nhật các vai trò đặc biệt
+        if (rooms[roomName].dealer === oldId) rooms[roomName].dealer = newId;
+        if (rooms[roomName].host === oldId) rooms[roomName].host = newId;
+        if (rooms[roomName].currentTurn === oldId) rooms[roomName].currentTurn = newId;
+        if (rooms[roomName].lastRaiser === oldId) rooms[roomName].lastRaiser = newId;
+
+        // Cập nhật yêu cầu ngân hàng
+        if (rooms[roomName].bankRequests) {
+          rooms[roomName].bankRequests.forEach(req => {
+            if (req.playerId === oldId) req.playerId = newId;
+          });
+        }
+
+        rooms[roomName].players.push(newId);
+        socket.join(roomName);
+        socket.emit('joinAccepted', roomName);
+
+        // Gửi lại bài riêng nếu đang có
+        // Gửi lại bài riêng và trạng thái ngửa bài nếu đang trong ván
+        const display = rooms[roomName].displayNames[newId];
+        if (rooms[roomName].hands[newId]) {
+          const display = rooms[roomName].displayNames[newId];
+          socket.emit('privateDeal', { display, cards: rooms[roomName].hands[newId] });
+        }
+        if (rooms[roomName].started && rooms[roomName].cardsDealt) {
+          socket.emit('deal', { dealt: true });
+        }
+
+        io.to(roomName).emit('message', `♻️ ${playerName} đã kết nối lại và lấy lại vị trí`);
+        
+        // Gửi cập nhật trạng thái đầy đủ
+        emitSeatUpdate(roomName);
+        const rolesInfo = rooms[roomName].seats.map(sid => sid ? { id: sid, role: rooms[roomName].roles[sid] || null } : null);
+        io.to(roomName).emit('rolesUpdate', rolesInfo);
+        io.to(roomName).emit('gameState', { 
+          started: !!rooms[roomName].started, 
+          dealer: rooms[roomName].dealer || null, 
+          host: rooms[roomName].host || null, 
+          currentTurn: rooms[roomName].currentTurn || null, 
+          currentMaxBet: rooms[roomName].currentMaxBet || 0, 
+          communityCards: rooms[roomName].communityCards || [], 
+          cardsDealt: !!rooms[roomName].cardsDealt, 
+          defaultBigBlind: rooms[roomName].defaultBigBlind || 0 
+        });
+        emitPlayerList(roomName);
+        emitBankUpdate(roomName);
+        emitBankRequests(roomName);
         return;
       }
+
       rooms[roomName].displayNames[socket.id] = playerName;
       if (!rooms[roomName].players.includes(socket.id)) rooms[roomName].players.push(socket.id);
       socket.join(roomName);
@@ -709,39 +807,44 @@ io.on("connection", (socket) => {
       if (!roomObj) return;
       // remove from players
       roomObj.players = roomObj.players.filter(pid => pid !== socket.id);
-      if (roomObj.host === socket.id) {
-        roomObj.host = roomObj.players.length > 0 ? roomObj.players[0] : null;
-        if (roomObj.host) {
-          const newHostName = roomObj.displayNames[roomObj.host] || roomObj.host.slice(0, 6);
-          io.to(r).emit('message', `👑 ${newHostName} hiện là Chủ phòng (Host) mới`);
-        }
-      }
 
-      if (roomObj.players.length === 0) {
+      // Kiểm tra xem người chơi có đang ngồi ghế không
+      const isSeated = roomObj.seats.includes(socket.id);
+
+      // Nếu phòng không còn ai kết nối VÀ không còn ai ngồi ghế (dữ liệu treo), thì mới xóa phòng
+      const hasSeated = roomObj.seats.some(s => s !== null);
+      if (roomObj.players.length === 0 && !hasSeated) {
         delete rooms[r];
         console.log(`Phòng ${r} không còn người chơi. Game end now.`);
         return;
       }
-      // free seats
-      let changed = false;
-      roomObj.seats = roomObj.seats.map(sid => {
-        if (sid === socket.id) { changed = true; return null; }
-        return sid;
-      });
-      // Giải phóng dữ liệu người chơi
-      if (roomObj.playerNumbers && roomObj.playerNumbers[socket.id]) { delete roomObj.playerNumbers[socket.id]; changed = true; }
-      if (roomObj.displayNames && roomObj.displayNames[socket.id]) { delete roomObj.displayNames[socket.id]; changed = true; }
-      if (roomObj.roles && roomObj.roles[socket.id]) { delete roomObj.roles[socket.id]; changed = true; }
 
-      // Luôn cập nhật danh sách hàng chờ khi có người thoát
-      emitPlayerList(r);
-      emitBankUpdate(r);
+      if (isSeated) {
+        // Nếu đang ngồi ghế: GIỮ NGUYÊN DỮ LIỆU, chỉ thông báo
+        const name = roomObj.displayNames[socket.id] || socket.id;
+        console.log(`[Disconnect] ${name} kept in seat`);
+        io.to(r).emit('message', `⚠️ ${name} đã mất kết nối (Đang giữ ghế)`);
+      } else {
+        // Nếu không ngồi ghế (đang ở hàng chờ): Xóa dữ liệu
+        if (roomObj.playerNumbers && roomObj.playerNumbers[socket.id]) delete roomObj.playerNumbers[socket.id];
+        if (roomObj.displayNames && roomObj.displayNames[socket.id]) delete roomObj.displayNames[socket.id];
+        if (roomObj.roles && roomObj.roles[socket.id]) delete roomObj.roles[socket.id];
+        
+        // Cập nhật danh sách hàng chờ
+        emitPlayerList(r);
+        emitBankUpdate(r);
+      }
 
-      if (changed) {
-        if (!roomObj.seats.some(s => s !== null)) {
-          roomObj.defaultBigBlind = 0;
-        }
-        emitSeatUpdate(r);
+      // Nếu Host mất kết nối nhưng vẫn ngồi ghế, ta tạm thời không chuyển Host ngay
+      // hoặc có thể chuyển nếu muốn. Ở đây ta giữ nguyên để họ reconnect lại làm Host.
+      // Nếu họ KHÔNG ngồi ghế, logic trên đã xóa họ, ta cần chuyển Host.
+      if (!isSeated && roomObj.host === socket.id) {
+         roomObj.host = roomObj.players.length > 0 ? roomObj.players[0] : null;
+         if (roomObj.host) {
+            const newHostName = roomObj.displayNames[roomObj.host] || roomObj.host.slice(0, 6);
+            io.to(r).emit('message', `👑 ${newHostName} hiện là Chủ phòng (Host) mới`);
+            emitBankRequests(r);
+         }
       }
     });
   });
@@ -752,49 +855,40 @@ io.on("connection", (socket) => {
     const roomObj = rooms[room];
     // remove from players
     roomObj.players = roomObj.players.filter(pid => pid !== socket.id);
-    if (roomObj.host === socket.id) {
-      roomObj.host = roomObj.players.length > 0 ? roomObj.players[0] : null;
-      if (roomObj.host) {
-        const newHostName = roomObj.displayNames[roomObj.host] || roomObj.host.slice(0, 6);
-        io.to(room).emit('message', `👑 ${newHostName} hiện là Chủ phòng (Host) mới`);
-      }
-    }
 
-    if (roomObj.players.length === 0) {
+    const isSeated = roomObj.seats.includes(socket.id);
+    const hasSeated = roomObj.seats.some(s => s !== null);
+
+    if (roomObj.players.length === 0 && !hasSeated) {
       delete rooms[room];
       console.log(`Phòng ${room} không còn người chơi. Game end now.`);
       socket.leave(room);
       return;
     }
-    // free seats
-    let changed = false;
-    roomObj.seats = roomObj.seats.map(sid => {
-      if (sid === socket.id) { changed = true; return null; }
-      return sid;
-    });
-    // free player number mapping and display name and roles
-    if (roomObj.playerNumbers && roomObj.playerNumbers[socket.id]) { delete roomObj.playerNumbers[socket.id]; changed = true; }
-    if (roomObj.displayNames && roomObj.displayNames[socket.id]) { delete roomObj.displayNames[socket.id]; changed = true; }
-    if (roomObj.roles && roomObj.roles[socket.id]) { delete roomObj.roles[socket.id]; changed = true; }
-    if (roomObj.dealer === socket.id) {
-      roomObj.dealer = null;
-      const firstOcc = roomObj.seats.find(sid => sid);
-      if (firstOcc) { roomObj.dealer = firstOcc; roomObj.roles = roomObj.roles || {}; roomObj.roles[firstOcc] = 'Dealer'; }
-      changed = true;
-    }
-    if (changed) {
-      if (!roomObj.seats.some(s => s !== null)) {
-        roomObj.defaultBigBlind = 0;
-      }
-      emitSeatUpdate(room);
-      const rolesInfo = roomObj.seats.map(sid => sid ? { id: sid, role: roomObj.roles && roomObj.roles[sid] ? roomObj.roles[sid] : null } : null);
-      io.to(room).emit('rolesUpdate', rolesInfo);
-      io.to(room).emit('gameState', { started: !!roomObj.started, dealer: roomObj.dealer || null, host: roomObj.host || null, currentTurn: roomObj.currentTurn || null, currentMaxBet: roomObj.currentMaxBet || 0, communityCards: roomObj.communityCards || [], cardsDealt: !!roomObj.cardsDealt, defaultBigBlind: roomObj.defaultBigBlind || 0 });
-      io.to(room).emit('message', `Người chơi rời khỏi phòng`);
-      // update player list and bank info
+
+    if (isSeated) {
+      // Nếu đang ngồi ghế: GIỮ NGUYÊN DỮ LIỆU
+      const name = roomObj.displayNames[socket.id] || socket.id;
+      io.to(room).emit('message', `⚠️ ${name} đã rời phòng (Đang giữ ghế)`);
+    } else {
+      // Nếu không ngồi ghế: Xóa dữ liệu
+      if (roomObj.playerNumbers && roomObj.playerNumbers[socket.id]) delete roomObj.playerNumbers[socket.id];
+      if (roomObj.displayNames && roomObj.displayNames[socket.id]) delete roomObj.displayNames[socket.id];
+      if (roomObj.roles && roomObj.roles[socket.id]) delete roomObj.roles[socket.id];
+      
       emitPlayerList(room);
       emitBankUpdate(room);
     }
+
+    if (!isSeated && roomObj.host === socket.id) {
+      roomObj.host = roomObj.players.length > 0 ? roomObj.players[0] : null;
+      if (roomObj.host) {
+        const newHostName = roomObj.displayNames[roomObj.host] || roomObj.host.slice(0, 6);
+        io.to(room).emit('message', `👑 ${newHostName} hiện là Chủ phòng (Host) mới`);
+        emitBankRequests(room);
+      }
+    }
+
     socket.leave(room);
   });
 

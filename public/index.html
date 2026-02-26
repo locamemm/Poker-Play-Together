@@ -221,10 +221,21 @@
     const socket = window.socket;
     var myId = null;
     var roomName = null;
+    var playerName = null;
     window.__showdownHands = null;
     window.__defaultBigBlind = null;
 
-    socket.on('connect', () => { myId = socket.id; });
+    socket.on('connect', () => {
+      myId = socket.id;
+      if (roomName && playerName) {
+        console.log('Đang tự động kết nối lại...');
+        socket.emit("joinRoom", { room: roomName, name: playerName });
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Đã mất kết nối với máy chủ.');
+    });
 
     function toggleFullScreen() {
       if (!document.fullscreenElement) {
@@ -241,6 +252,7 @@
         const name = document.getElementById("playerName").value.trim();
         if (!room) return alert('Nhập tên phòng trước');
         if (!name) return alert('Vui lòng nhập tên người chơi');
+        playerName = name;
         // emit join request and wait for server acceptance
         socket.emit("joinRoom", { room, name });
     }
