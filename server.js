@@ -234,7 +234,7 @@ function determineWinner(roomName) {
   r.totalBets = {};
   r.currentMaxBet = 0;
   io.to(roomName).emit("updatePot", 0);
-  io.to(roomName).emit('gameState', { started: false, dealer: r.dealer, currentTurn: null, currentMaxBet: 0, communityCards: r.communityCards, cardsDealt: false, defaultBigBlind: r.defaultBigBlind || 0 });
+  io.to(roomName).emit('gameState', { started: false, dealer: r.dealer, host: r.host || null, currentTurn: null, currentMaxBet: 0, communityCards: r.communityCards, cardsDealt: false, defaultBigBlind: r.defaultBigBlind || 0 });
   emitSeatUpdate(roomName);
 }
 
@@ -303,7 +303,7 @@ io.on("connection", (socket) => {
         return;
       }
       if (!rooms[roomName]) {
-        rooms[roomName] = { players: [], seats: Array(8).fill(null), playerNumbers: {}, displayNames: {}, roles: {}, dealer: null, pot: 0, deck: [], balances: {}, loanCounts: {}, bets: {}, totalBets: {}, currentMaxBet: 0, communityCards: [], round: 0, cardsDealt: false, hands: {}, history: [], defaultBigBlind: 0 };
+        rooms[roomName] = { players: [], seats: Array(8).fill(null), playerNumbers: {}, displayNames: {}, roles: {}, dealer: null, host: null, pot: 0, deck: [], balances: {}, loanCounts: {}, bets: {}, totalBets: {}, currentMaxBet: 0, communityCards: [], round: 0, cardsDealt: false, hands: {}, history: [], defaultBigBlind: 0 };
       }
       // enforce unique display name within the room
       const existingNames = Object.values(rooms[roomName].displayNames || {});
@@ -314,6 +314,10 @@ io.on("connection", (socket) => {
       rooms[roomName].displayNames[socket.id] = playerName;
       if (!rooms[roomName].players.includes(socket.id)) rooms[roomName].players.push(socket.id);
       socket.join(roomName);
+      if (!rooms[roomName].host) {
+        rooms[roomName].host = socket.id;
+        io.to(roomName).emit('message', `👑 ${playerName} là Chủ phòng (Host)`);
+      }
       // acknowledge join to the joining socket (client will show UI on acceptance)
       socket.emit('joinAccepted', roomName);
       // ensure initial bank state for this socket
@@ -327,7 +331,7 @@ io.on("connection", (socket) => {
       // emit roles and game state so client can update Start button and seat interactivity
       const rolesInfo = rooms[roomName].seats.map(sid => sid ? { id: sid, role: rooms[roomName].roles && rooms[roomName].roles[sid] ? rooms[roomName].roles[sid] : null } : null);
       io.to(roomName).emit('rolesUpdate', rolesInfo);
-        io.to(roomName).emit('gameState', { started: !!rooms[roomName].started, dealer: rooms[roomName].dealer || null, currentTurn: rooms[roomName].currentTurn || null, currentMaxBet: rooms[roomName].currentMaxBet || 0, communityCards: rooms[roomName].communityCards || [], cardsDealt: !!rooms[roomName].cardsDealt, defaultBigBlind: rooms[roomName].defaultBigBlind || 0 });
+        io.to(roomName).emit('gameState', { started: !!rooms[roomName].started, dealer: rooms[roomName].dealer || null, host: rooms[roomName].host || null, currentTurn: rooms[roomName].currentTurn || null, currentMaxBet: rooms[roomName].currentMaxBet || 0, communityCards: rooms[roomName].communityCards || [], cardsDealt: !!rooms[roomName].cardsDealt, defaultBigBlind: rooms[roomName].defaultBigBlind || 0 });
         // emit player list and bank info for the room
         emitPlayerList(roomName);
         emitBankUpdate(roomName);
@@ -337,7 +341,7 @@ io.on("connection", (socket) => {
   socket.on("joinSeat", ({ room, seatIndex }) => {
     if (!room || typeof seatIndex !== 'number') return;
     if (!rooms[room]) {
-      rooms[room] = { players: [], seats: Array(8).fill(null), playerNumbers: {}, displayNames: {}, roles: {}, dealer: null, pot: 0, deck: [], balances: {}, loanCounts: {}, bets: {}, totalBets: {}, currentMaxBet: 0, communityCards: [], round: 0, cardsDealt: false, hands: {}, history: [], defaultBigBlind: 0 };
+      rooms[room] = { players: [], seats: Array(8).fill(null), playerNumbers: {}, displayNames: {}, roles: {}, dealer: null, host: null, pot: 0, deck: [], balances: {}, loanCounts: {}, bets: {}, totalBets: {}, currentMaxBet: 0, communityCards: [], round: 0, cardsDealt: false, hands: {}, history: [], defaultBigBlind: 0 };
     }
     const currentSeat = (socket.data && typeof socket.data.seat === 'number') ? socket.data.seat : null;
     // do not allow taking a seat when the game has already started
@@ -347,7 +351,7 @@ io.on("connection", (socket) => {
     }
     // Requirement: Balance must be > 0 to sit
     const playerBalance = rooms[room].balances[socket.id] || 0;
-    if (playerBalance <= 0) {
+    if (currentSeat === null && playerBalance <= 0) {
       socket.emit('seatError', 'Bạn cần có tiền để ngồi vào ghế. Hãy vay tiền từ ngân hàng.');
       return;
     }
@@ -390,13 +394,21 @@ io.on("connection", (socket) => {
           rooms[room].roles[firstOcc] = 'Dealer';
         }
       }
+      if (!seats.some(s => s !== null)) {
+        rooms[room].defaultBigBlind = 0;
+      }
       delete socket.data.seat;
+      // Nếu người rời ghế là Host, đảm bảo họ vẫn là Host của phòng
+      if (!rooms[room].host) {
+        rooms[room].host = socket.id;
+      }
+
       emitSeatUpdate(room);
       // emit rolesUpdate as well
       const rolesInfo = rooms[room].seats.map(sid => sid ? { id: sid, role: rooms[room].roles[sid] || null } : null);
       io.to(room).emit('rolesUpdate', rolesInfo);
       // also send gameState
-      io.to(room).emit('gameState', { started: !!rooms[room].started, dealer: rooms[room].dealer || null, currentTurn: rooms[room].currentTurn || null, currentMaxBet: rooms[room].currentMaxBet || 0, communityCards: rooms[room].communityCards || [], cardsDealt: !!rooms[room].cardsDealt, defaultBigBlind: rooms[room].defaultBigBlind || 0 });
+      io.to(room).emit('gameState', { started: !!rooms[room].started, dealer: rooms[room].dealer || null, host: rooms[room].host || null, currentTurn: rooms[room].currentTurn || null, currentMaxBet: rooms[room].currentMaxBet || 0, communityCards: rooms[room].communityCards || [], cardsDealt: !!rooms[room].cardsDealt, defaultBigBlind: rooms[room].defaultBigBlind || 0 });
       const leftLabel = rooms[room] && rooms[room].displayNames && rooms[room].displayNames[socket.id] ? rooms[room].displayNames[socket.id] : socket.id.slice(0,6);
       io.to(room).emit('message', `Người chơi ${leftLabel} rời ghế ${seatIndex+1}`);
       emitPlayerList(room);
@@ -419,6 +431,11 @@ io.on("connection", (socket) => {
       rooms[room].roles = rooms[room].roles || {};
       rooms[room].roles[socket.id] = 'Dealer';
     }
+    // Đảm bảo luôn có Host nếu phòng được tạo từ joinSeat
+    if (!rooms[room].host) {
+      rooms[room].host = socket.id;
+      io.to(room).emit('message', `👑 ${rooms[room].displayNames[socket.id] || socket.id.slice(0,6)} là Chủ phòng (Host)`);
+    }
     if (!rooms[room].players.includes(socket.id)) rooms[room].players.push(socket.id);
     socket.join(room);
     socket.data.room = room;
@@ -428,7 +445,7 @@ io.on("connection", (socket) => {
     const rolesInfo = seats.map(sid => sid ? { id: sid, role: rooms[room].roles[sid] || null } : null);
     io.to(room).emit('rolesUpdate', rolesInfo);
     // emit game state so clients (especially dealer) can enable Start button
-    io.to(room).emit('gameState', { started: !!rooms[room].started, dealer: rooms[room].dealer || null, currentTurn: rooms[room].currentTurn || null, currentMaxBet: rooms[room].currentMaxBet || 0, communityCards: rooms[room].communityCards || [], cardsDealt: !!rooms[room].cardsDealt });
+    io.to(room).emit('gameState', { started: !!rooms[room].started, dealer: rooms[room].dealer || null, host: rooms[room].host || null, currentTurn: rooms[room].currentTurn || null, currentMaxBet: rooms[room].currentMaxBet || 0, communityCards: rooms[room].communityCards || [], cardsDealt: !!rooms[room].cardsDealt, defaultBigBlind: rooms[room].defaultBigBlind || 0 });
     // emit player list and bank info for the room
     emitPlayerList(room);
     emitBankUpdate(room);
@@ -487,7 +504,7 @@ io.on("connection", (socket) => {
     r.communityCards = [];
     r.cardsDealt = true;
     // Thông báo ngay cho client là bắt đầu chia bài để kích hoạt hiển thị khung bài trên ghế
-    io.to(room).emit('gameState', { started: !!r.started, dealer: r.dealer || null, currentTurn: r.currentTurn || null, currentMaxBet: r.currentMaxBet || 0, communityCards: r.communityCards || [], cardsDealt: true, defaultBigBlind: r.defaultBigBlind || 0 });
+    io.to(room).emit('gameState', { started: !!r.started, dealer: r.dealer || null, host: r.host || null, currentTurn: r.currentTurn || null, currentMaxBet: r.currentMaxBet || 0, communityCards: r.communityCards || [], cardsDealt: true, defaultBigBlind: r.defaultBigBlind || 0 });
     // prepare empty hands for seated players
     r.hands = {};
     r.seats.forEach(pid => { if (pid) r.hands[pid] = []; });
@@ -558,7 +575,7 @@ io.on("connection", (socket) => {
       r.currentTurn = firstActId || null;
       const turnLabel = r.currentTurn ? (r.displayNames && r.displayNames[r.currentTurn] ? r.displayNames[r.currentTurn] : (r.playerNumbers && r.playerNumbers[r.currentTurn] ? `Player_${r.playerNumbers[r.currentTurn]}` : r.currentTurn.slice(0,6))) : null;
       io.to(room).emit('turnUpdate', { currentTurn: r.currentTurn, currentLabel: turnLabel, currentMaxBet: r.currentMaxBet || 0 });
-      io.to(room).emit('gameState', { started: true, dealer: r.dealer, currentTurn: r.currentTurn, currentMaxBet: r.currentMaxBet || 0, communityCards: r.communityCards || [], cardsDealt: true, defaultBigBlind: r.defaultBigBlind || 0 });
+      io.to(room).emit('gameState', { started: true, dealer: r.dealer, host: r.host || null, currentTurn: r.currentTurn, currentMaxBet: r.currentMaxBet || 0, communityCards: r.communityCards || [], cardsDealt: true, defaultBigBlind: r.defaultBigBlind || 0 });
     }, maxTime + delayMs);
   });
 
@@ -653,19 +670,47 @@ io.on("connection", (socket) => {
       const dealerLabel = r.displayNames && r.displayNames[r.dealer] ? r.displayNames[r.dealer] : (r.playerNumbers[r.dealer] ? `Player_${r.playerNumbers[r.dealer]}` : r.dealer.slice(0,6));
       io.to(room).emit('gameStarted', { dealerId: r.dealer, dealerLabel, sb, bb });
         // emit gameState
-        io.to(room).emit('gameState', { started: true, dealer: r.dealer, currentTurn: r.currentTurn || null, currentMaxBet: r.currentMaxBet, communityCards: [], cardsDealt: false, defaultBigBlind: r.defaultBigBlind || 0 });
+        io.to(room).emit('gameState', { started: true, dealer: r.dealer, host: r.host || null, currentTurn: r.currentTurn || null, currentMaxBet: r.currentMaxBet, communityCards: [], cardsDealt: false, defaultBigBlind: r.defaultBigBlind || 0 });
   });
 
   socket.on('endGame', (room) => {
     if (!room || !rooms[room]) return;
     const r = rooms[room];
+    // only dealer can end game
+    if (socket.id !== r.dealer) {
+      socket.emit('seatError', 'Chỉ Dealer mới được kết thúc ván');
+      return;
+    }
+
+    // Hoàn trả tiền cược cho người chơi nếu ván đấu đang diễn ra
+    if (r.started && r.totalBets) {
+      Object.keys(r.totalBets).forEach(pid => {
+        const amount = r.totalBets[pid] || 0;
+        if (amount > 0) {
+          r.balances[pid] = (r.balances[pid] || 0) + amount;
+          const name = r.displayNames[pid] || pid.slice(0, 6);
+          io.to(room).emit('message', `💰 Hoàn trả ${amount} cho ${name} (Hủy ván)`);
+        }
+      });
+    }
+
     // mark game as not started but KEEP roles and dealer
     r.started = false;
     r.cardsDealt = false;
     r.hands = {};
+    r.pot = 0;
+    r.bets = {};
+    r.totalBets = {};
+    r.currentMaxBet = 0;
+
     io.to(room).emit('gameEnded', { msg: 'Game ended' });
+    io.to(room).emit("updatePot", 0);
+    emitSeatUpdate(room);
+    emitBankUpdate(room);
+    emitPlayerList(room);
+
     // notify clients of new game state so they can re-enable seat actions
-    io.to(room).emit('gameState', { started: false, dealer: r.dealer || null, currentTurn: r.currentTurn || null, currentMaxBet: r.currentMaxBet || 0, communityCards: r.communityCards || [], cardsDealt: false, defaultBigBlind: r.defaultBigBlind || 0 });
+    io.to(room).emit('gameState', { started: false, dealer: r.dealer || null, host: r.host || null, currentTurn: r.currentTurn || null, currentMaxBet: r.currentMaxBet || 0, communityCards: r.communityCards || [], cardsDealt: false, defaultBigBlind: r.defaultBigBlind || 0 });
   });
 
   socket.on('disconnect', () => {
@@ -675,6 +720,14 @@ io.on("connection", (socket) => {
       if (!roomObj) return;
       // remove from players
       roomObj.players = roomObj.players.filter(pid => pid !== socket.id);
+      if (roomObj.host === socket.id) {
+        roomObj.host = roomObj.players.length > 0 ? roomObj.players[0] : null;
+        if (roomObj.host) {
+          const newHostName = roomObj.displayNames[roomObj.host] || roomObj.host.slice(0, 6);
+          io.to(r).emit('message', `👑 ${newHostName} hiện là Chủ phòng (Host) mới`);
+        }
+      }
+
       if (roomObj.players.length === 0) {
         delete rooms[r];
         console.log(`Phòng ${r} không còn người chơi. Game end now.`);
@@ -696,6 +749,9 @@ io.on("connection", (socket) => {
       emitBankUpdate(r);
 
       if (changed) {
+        if (!roomObj.seats.some(s => s !== null)) {
+          roomObj.defaultBigBlind = 0;
+        }
         emitSeatUpdate(r);
       }
     });
@@ -707,6 +763,14 @@ io.on("connection", (socket) => {
     const roomObj = rooms[room];
     // remove from players
     roomObj.players = roomObj.players.filter(pid => pid !== socket.id);
+    if (roomObj.host === socket.id) {
+      roomObj.host = roomObj.players.length > 0 ? roomObj.players[0] : null;
+      if (roomObj.host) {
+        const newHostName = roomObj.displayNames[roomObj.host] || roomObj.host.slice(0, 6);
+        io.to(room).emit('message', `👑 ${newHostName} hiện là Chủ phòng (Host) mới`);
+      }
+    }
+
     if (roomObj.players.length === 0) {
       delete rooms[room];
       console.log(`Phòng ${room} không còn người chơi. Game end now.`);
@@ -730,10 +794,13 @@ io.on("connection", (socket) => {
       changed = true;
     }
     if (changed) {
+      if (!roomObj.seats.some(s => s !== null)) {
+        roomObj.defaultBigBlind = 0;
+      }
       emitSeatUpdate(room);
       const rolesInfo = roomObj.seats.map(sid => sid ? { id: sid, role: roomObj.roles && roomObj.roles[sid] ? roomObj.roles[sid] : null } : null);
       io.to(room).emit('rolesUpdate', rolesInfo);
-      io.to(room).emit('gameState', { started: !!roomObj.started, dealer: roomObj.dealer || null, currentTurn: roomObj.currentTurn || null, currentMaxBet: roomObj.currentMaxBet || 0, communityCards: roomObj.communityCards || [], cardsDealt: !!roomObj.cardsDealt, defaultBigBlind: roomObj.defaultBigBlind || 0 });
+      io.to(room).emit('gameState', { started: !!roomObj.started, dealer: roomObj.dealer || null, host: roomObj.host || null, currentTurn: roomObj.currentTurn || null, currentMaxBet: roomObj.currentMaxBet || 0, communityCards: roomObj.communityCards || [], cardsDealt: !!roomObj.cardsDealt, defaultBigBlind: roomObj.defaultBigBlind || 0 });
       io.to(room).emit('message', `Người chơi rời khỏi phòng`);
       // update player list and bank info
       emitPlayerList(room);
@@ -824,14 +891,14 @@ io.on("connection", (socket) => {
 
       if (next === null && r.started && activePlayers.length >= 2) {
         r.currentTurn = null;
-        io.to(roomName).emit('gameState', { started: true, dealer: r.dealer, currentTurn: null, currentMaxBet: 0, communityCards: r.communityCards, cardsDealt: !!r.cardsDealt });
+        io.to(roomName).emit('gameState', { started: true, dealer: r.dealer, host: r.host || null, currentTurn: null, currentMaxBet: 0, communityCards: r.communityCards, cardsDealt: !!r.cardsDealt, defaultBigBlind: r.defaultBigBlind || 0 });
         setTimeout(() => {
           if (rooms[roomName] && rooms[roomName].started) advanceRound(roomName);
         }, 1500);
       } else {
         r.currentTurn = next;
         r.lastRaiser = next;
-        io.to(roomName).emit('gameState', { started: true, dealer: r.dealer, currentTurn: r.currentTurn, currentMaxBet: 0, communityCards: r.communityCards, cardsDealt: !!r.cardsDealt });
+        io.to(roomName).emit('gameState', { started: true, dealer: r.dealer, host: r.host || null, currentTurn: r.currentTurn, currentMaxBet: 0, communityCards: r.communityCards, cardsDealt: !!r.cardsDealt, defaultBigBlind: r.defaultBigBlind || 0 });
         const turnLabel = r.currentTurn ? (r.displayNames[r.currentTurn] || `Player_${r.playerNumbers[r.currentTurn]}`) : null;
         io.to(roomName).emit('turnUpdate', { currentTurn: r.currentTurn, currentLabel: turnLabel, currentMaxBet: 0 });
         emitSeatUpdate(roomName);
@@ -845,7 +912,7 @@ io.on("connection", (socket) => {
         setTimeout(() => {
           if (!rooms[roomName]) return;
           r.communityCards.push(r.deck.pop());
-          io.to(roomName).emit('gameState', { started: true, dealer: r.dealer, currentTurn: null, currentMaxBet: 0, communityCards: r.communityCards, cardsDealt: !!r.cardsDealt });
+          io.to(roomName).emit('gameState', { started: true, dealer: r.dealer, host: r.host || null, currentTurn: null, currentMaxBet: 0, communityCards: r.communityCards, cardsDealt: !!r.cardsDealt, defaultBigBlind: r.defaultBigBlind || 0 });
           if (i === 2) finalizeRound();
         }, (i + 1) * 1500);
       }
@@ -974,7 +1041,7 @@ io.on("connection", (socket) => {
     const turnLabel = r.currentTurn ? (r.displayNames && r.displayNames[r.currentTurn] ? r.displayNames[r.currentTurn] : (r.playerNumbers && r.playerNumbers[r.currentTurn] ? `Player_${r.playerNumbers[r.currentTurn]}` : r.currentTurn.slice(0,6))) : null;
     io.to(room).emit('turnUpdate', { currentTurn: r.currentTurn, currentLabel: turnLabel, currentMaxBet: r.currentMaxBet || 0 });
     // emit updated gameState as well
-    io.to(room).emit('gameState', { started: !!r.started, dealer: r.dealer || null, currentTurn: r.currentTurn || null, currentMaxBet: r.currentMaxBet || 0, communityCards: r.communityCards || [], cardsDealt: !!r.cardsDealt, defaultBigBlind: r.defaultBigBlind || 0 });
+    io.to(room).emit('gameState', { started: !!r.started, dealer: r.dealer || null, host: r.host || null, currentTurn: r.currentTurn || null, currentMaxBet: r.currentMaxBet || 0, communityCards: r.communityCards || [], cardsDealt: !!r.cardsDealt, defaultBigBlind: r.defaultBigBlind || 0 });
     // emit bank update in case balances changed
     emitPlayerList(room);
     emitBankUpdate(room);
