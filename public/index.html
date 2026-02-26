@@ -142,6 +142,10 @@
       #queuePanel, #bankPanel {
         top: 50px !important; width: 90% !important; left: 5% !important; right: auto !important;
       }
+
+      #topControls {
+        margin-top: -40px;
+      }
     }
   </style>
 </head>
@@ -173,7 +177,7 @@
     </div>
 
     <div class="table-area" aria-label="Poker table" style="display:none;">
-      <div style="text-align:center; margin-bottom:8px;">
+      <div id="topControls" style="text-align:center; margin-bottom:8px;">
         <div id="tableStartBox" class="start-box" data-state="stopped">Start</div>
         <div id="roundButtons" style="display:inline-block; margin-left:12px; vertical-align:middle;">
           <button id="checkBtn" class="action-btn" style="display:none; margin-left:6px; padding:8px 10px; border-radius:6px;">Check</button>
