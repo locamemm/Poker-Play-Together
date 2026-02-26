@@ -1,0 +1,41 @@
+const chatMessages = document.getElementById('chat-messages');
+const chatInput = document.getElementById('chat-input');
+const sendChatBtn = document.getElementById('send-chat');
+
+if (typeof socket !== 'undefined') {
+  socket.on('message', (msg) => {
+    if (chatMessages) {
+      const msgDiv = document.createElement('div');
+      msgDiv.textContent = msg;
+      chatMessages.appendChild(msgDiv);
+      // Tự động cuộn xuống cuối khi có tin nhắn mới
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+  });
+}
+
+if (sendChatBtn && chatInput) {
+  sendChatBtn.addEventListener('click', () => {
+    const msg = chatInput.value.trim();
+    if (msg && typeof roomName !== 'undefined') {
+      socket.emit('chatMessage', { room: roomName, message: msg });
+      chatInput.value = '';
+    }
+  });
+  chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChatBtn.click(); });
+}
+
+const endGameBtn = document.getElementById('endGameBtn');
+
+if (endGameBtn) {
+  endGameBtn.addEventListener('click', () => {
+    const message = "Bạn có chắc chắn muốn kết thúc ván đấu ngay lập tức không?\n\n" +
+                    "Lưu ý: Toàn bộ tiền cược hiện tại trong Pot sẽ được hoàn trả lại cho người chơi.";
+    
+    if (window.confirm(message)) {
+      // Gửi yêu cầu kết thúc ván lên server. 
+      // Đảm bảo biến roomName đã được định nghĩa khi bạn tham gia phòng.
+      socket.emit('endGame', typeof roomName !== 'undefined' ? roomName : null); 
+    }
+  });
+}

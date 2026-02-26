@@ -291,6 +291,13 @@ function emitSeatUpdate(roomName) {
 io.on("connection", (socket) => {
   console.log("Người chơi kết nối:", socket.id.slice(0,6));
 
+  socket.on('chatMessage', ({ room, message }) => {
+    if (!room || !rooms[room]) return;
+    const r = rooms[room];
+    const name = r.displayNames[socket.id] || socket.id.slice(0, 6);
+    io.to(room).emit('message', `${name}: ${message}`);
+  });
+
   socket.on("joinRoom", (room) => {
       // room may be a string or object {room,name}
       let roomName = null;
@@ -753,6 +760,7 @@ io.on("connection", (socket) => {
           roomObj.defaultBigBlind = 0;
         }
         emitSeatUpdate(r);
+        io.to(r).emit('gameState', { started: !!roomObj.started, dealer: roomObj.dealer || null, host: roomObj.host || null, currentTurn: roomObj.currentTurn || null, currentMaxBet: roomObj.currentMaxBet || 0, communityCards: roomObj.communityCards || [], cardsDealt: !!roomObj.cardsDealt, defaultBigBlind: roomObj.defaultBigBlind || 0 });
       }
     });
   });
@@ -832,6 +840,7 @@ io.on("connection", (socket) => {
     emitPlayerList(room);
     emitBankUpdate(room);
     emitSeatUpdate(room);
+    io.to(room).emit('gameState', { started: !!r.started, dealer: r.dealer || null, host: r.host || null, currentTurn: r.currentTurn || null, currentMaxBet: r.currentMaxBet || 0, communityCards: r.communityCards || [], cardsDealt: !!r.cardsDealt, defaultBigBlind: r.defaultBigBlind || 0 });
   });
 
   socket.on('bankRepay', ({ room, amount }) => {
@@ -861,6 +870,7 @@ io.on("connection", (socket) => {
     emitPlayerList(room);
     emitBankUpdate(room);
     emitSeatUpdate(room);
+    io.to(room).emit('gameState', { started: !!r.started, dealer: r.dealer || null, host: r.host || null, currentTurn: r.currentTurn || null, currentMaxBet: r.currentMaxBet || 0, communityCards: r.communityCards || [], cardsDealt: !!r.cardsDealt, defaultBigBlind: r.defaultBigBlind || 0 });
   });
 
   function advanceRound(roomName) {
