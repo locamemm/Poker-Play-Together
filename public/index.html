@@ -305,6 +305,30 @@
       }
     });
 
+    // Tự động đóng panel ngân hàng khi click bất kỳ bên ngoài panel
+    document.addEventListener('click', (event) => {
+      const panel = document.getElementById('bankPanel');
+      const toggle = document.getElementById('bankToggle');
+      if (panel.style.display === 'block' && 
+          !panel.contains(event.target) && 
+          !toggle.contains(event.target)) {
+        panel.style.display = 'none';
+        toggle.textContent = 'Ngân hàng ▾';
+      }
+    });
+
+    // Tự động đóng panel ngân hàng khi click bất kỳ bên ngoài panel
+    document.addEventListener('click', (event) => {
+      const panel = document.getElementById('bankPanel');
+      const toggle = document.getElementById('bankToggle');
+      if (panel.style.display === 'block' && 
+          !panel.contains(event.target) && 
+          !toggle.contains(event.target)) {
+        panel.style.display = 'none';
+        toggle.textContent = 'Ngân hàng ▾';
+      }
+    });
+
     socket.on('bankUpdate', (list) => {
       const ul = document.getElementById('bankList');
       ul.innerHTML = '';
