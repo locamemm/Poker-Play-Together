@@ -262,14 +262,15 @@ function emitPlayerList(roomName) {
 function emitBankUpdate(roomName) {
   if (!rooms[roomName]) return;
   const room = rooms[roomName];
-  const list = (room.players || [])
-    .filter(pid => pid)
-    .map(pid => {
+  // Lấy danh sách tất cả người chơi (đang kết nối hoặc đang ngồi ghế)
+  const allIds = new Set([...room.players, ...room.seats.filter(s => s)]);
+  const list = Array.from(allIds).map(pid => {
       const displayName = room.displayNames && room.displayNames[pid] ? room.displayNames[pid]
         : (room.playerNumbers && room.playerNumbers[pid]) ? `Player_${room.playerNumbers[pid]}` : pid.slice(0,6);
       const balance = room.balances && typeof room.balances[pid] !== 'undefined' ? room.balances[pid] : 0;
       const loans = room.loanCounts && typeof room.loanCounts[pid] !== 'undefined' ? room.loanCounts[pid] : 0;
-      return { id: pid, name: displayName, displayName, balance, loans };
+      const isConnected = room.players.includes(pid);
+      return { id: pid, name: displayName, displayName, balance, loans, isConnected };
     });
   io.to(roomName).emit('bankUpdate', list);
 }
@@ -304,6 +305,67 @@ function emitBankRequests(roomName) {
   if (r.host && r.host !== r.dealer) io.to(r.host).emit('bankRequestsUpdate', requestsWithNames);
 }
 
+function startKickTimeout(roomObj, socketId, roomName) {
+  if (roomObj.disconnectTimeouts && roomObj.disconnectTimeouts[socketId]) {
+    clearTimeout(roomObj.disconnectTimeouts[socketId]);
+  }
+  roomObj.disconnectTimeouts = roomObj.disconnectTimeouts || {};
+  roomObj.disconnectTimeouts[socketId] = setTimeout(() => {
+    if (rooms[roomName] && rooms[roomName].seats.includes(socketId)) {
+       const r = rooms[roomName];
+       const name = r.displayNames[socketId] || socketId;
+       const seatIdx = r.seats.indexOf(socketId);
+       
+       if (seatIdx !== -1) {
+          // 1. Fold bài nếu đang chơi
+          if (r.started && !r.folded[socketId]) {
+             r.folded[socketId] = true;
+          }
+          // 2. Xóa khỏi ghế
+          r.seats[seatIdx] = null;
+          if (r.playerNumbers[socketId]) delete r.playerNumbers[socketId];
+          if (r.roles[socketId]) delete r.roles[socketId];
+          if (r.dealer === socketId) {
+             r.dealer = null;
+             const firstOcc = r.seats.find(s => s);
+             if (firstOcc) { r.dealer = firstOcc; r.roles[firstOcc] = 'Dealer'; }
+          }
+          if (!r.seats.some(s => s !== null)) r.defaultBigBlind = 0;
+          
+          // 3. Xóa khỏi danh sách players (nếu còn sót)
+          r.players = r.players.filter(p => p !== socketId);
+
+          // 4. Xử lý lượt chơi
+          if (r.started) {
+             const activePlayers = r.seats.filter(pid => pid && !r.folded[pid]);
+             if (activePlayers.length <= 1) {
+                r.currentTurn = null;
+                io.to(roomName).emit('turnUpdate', { currentTurn: null, currentLabel: 'Vòng kết thúc', currentMaxBet: r.currentMaxBet });
+                setTimeout(() => { if (rooms[roomName] && rooms[roomName].started) determineWinner(roomName); }, 1000);
+             } else if (r.currentTurn === socketId) {
+                let next = null;
+                const len = r.seats.length;
+                for (let i = 1; i <= len; i++) {
+                   const idx = (seatIdx + i) % len;
+                   const pid = r.seats[idx];
+                   if (pid && !r.folded[pid] && (r.balances[pid] || 0) > 0) { next = pid; break; }
+                }
+                r.currentTurn = next;
+                const turnLabel = r.currentTurn ? (r.displayNames[r.currentTurn] || r.currentTurn) : null;
+                io.to(roomName).emit('turnUpdate', { currentTurn: r.currentTurn, currentLabel: turnLabel, currentMaxBet: r.currentMaxBet });
+             }
+          }
+          
+          io.to(roomName).emit('message', `🚫 ${name} đã bị kick tự động do mất kết nối quá 1 phút`);
+          emitSeatUpdate(roomName);
+          emitPlayerList(roomName);
+          emitBankUpdate(roomName);
+       }
+    }
+    if (rooms[roomName] && rooms[roomName].disconnectTimeouts) delete rooms[roomName].disconnectTimeouts[socketId];
+  }, 60000); // 1 phút
+}
+
 io.on("connection", (socket) => {
   console.log("Người chơi kết nối:", socket.id.slice(0,6));
 
@@ -326,7 +388,7 @@ io.on("connection", (socket) => {
         return;
       }
       if (!rooms[roomName]) {
-        rooms[roomName] = { players: [], seats: Array(8).fill(null), playerNumbers: {}, displayNames: {}, roles: {}, dealer: null, host: null, pot: 0, deck: [], balances: {}, loanCounts: {}, bets: {}, totalBets: {}, currentMaxBet: 0, communityCards: [], round: 0, cardsDealt: false, hands: {}, history: [], defaultBigBlind: 0 };
+        rooms[roomName] = { players: [], seats: Array(8).fill(null), playerNumbers: {}, displayNames: {}, roles: {}, dealer: null, host: null, pot: 0, deck: [], balances: {}, loanCounts: {}, bets: {}, totalBets: {}, currentMaxBet: 0, communityCards: [], round: 0, cardsDealt: false, hands: {}, history: [], defaultBigBlind: 0, disconnectTimeouts: {} };
       }
       
       // Kiểm tra xem tên người chơi đã tồn tại chưa (để xử lý kết nối lại)
@@ -364,6 +426,12 @@ io.on("connection", (socket) => {
         // Cập nhật ghế ngồi
         const seatIdx = rooms[roomName].seats.indexOf(oldId);
         if (seatIdx !== -1) {
+          // Hủy bộ đếm kick nếu có
+          if (rooms[roomName].disconnectTimeouts && rooms[roomName].disconnectTimeouts[oldId]) {
+             clearTimeout(rooms[roomName].disconnectTimeouts[oldId]);
+             delete rooms[roomName].disconnectTimeouts[oldId];
+          }
+
           rooms[roomName].seats[seatIdx] = newId;
           socket.data.seat = seatIdx;
           socket.data.room = roomName;
@@ -373,7 +441,13 @@ io.on("connection", (socket) => {
 
         // Cập nhật các vai trò đặc biệt
         if (rooms[roomName].dealer === oldId) rooms[roomName].dealer = newId;
-        if (rooms[roomName].host === oldId) rooms[roomName].host = newId;
+        if (rooms[roomName].host === oldId) {
+          rooms[roomName].host = newId;
+          if (rooms[roomName].hostDisconnectTimeout) {
+            clearTimeout(rooms[roomName].hostDisconnectTimeout);
+            delete rooms[roomName].hostDisconnectTimeout;
+          }
+        }
         if (rooms[roomName].currentTurn === oldId) rooms[roomName].currentTurn = newId;
         if (rooms[roomName].lastRaiser === oldId) rooms[roomName].lastRaiser = newId;
 
@@ -451,7 +525,7 @@ io.on("connection", (socket) => {
   socket.on("joinSeat", ({ room, seatIndex }) => {
     if (!room || typeof seatIndex !== 'number') return;
     if (!rooms[room]) {
-      rooms[room] = { players: [], seats: Array(8).fill(null), playerNumbers: {}, displayNames: {}, roles: {}, dealer: null, host: null, pot: 0, deck: [], balances: {}, loanCounts: {}, bets: {}, totalBets: {}, currentMaxBet: 0, communityCards: [], round: 0, cardsDealt: false, hands: {}, history: [], defaultBigBlind: 0 };
+      rooms[room] = { players: [], seats: Array(8).fill(null), playerNumbers: {}, displayNames: {}, roles: {}, dealer: null, host: null, pot: 0, deck: [], balances: {}, loanCounts: {}, bets: {}, totalBets: {}, currentMaxBet: 0, communityCards: [], round: 0, cardsDealt: false, hands: {}, history: [], defaultBigBlind: 0, disconnectTimeouts: {} };
     }
     const currentSeat = (socket.data && typeof socket.data.seat === 'number') ? socket.data.seat : null;
     // do not allow taking a seat when the game has already started
@@ -824,6 +898,7 @@ io.on("connection", (socket) => {
         const name = roomObj.displayNames[socket.id] || socket.id;
         console.log(`[Disconnect] ${name} kept in seat`);
         io.to(r).emit('message', `⚠️ ${name} đã mất kết nối (Đang giữ ghế)`);
+        startKickTimeout(roomObj, socket.id, r);
       } else {
         // Nếu không ngồi ghế (đang ở hàng chờ): Xóa dữ liệu
         if (roomObj.playerNumbers && roomObj.playerNumbers[socket.id]) delete roomObj.playerNumbers[socket.id];
@@ -835,16 +910,23 @@ io.on("connection", (socket) => {
         emitBankUpdate(r);
       }
 
-      // Nếu Host mất kết nối nhưng vẫn ngồi ghế, ta tạm thời không chuyển Host ngay
-      // hoặc có thể chuyển nếu muốn. Ở đây ta giữ nguyên để họ reconnect lại làm Host.
-      // Nếu họ KHÔNG ngồi ghế, logic trên đã xóa họ, ta cần chuyển Host.
-      if (!isSeated && roomObj.host === socket.id) {
-         roomObj.host = roomObj.players.length > 0 ? roomObj.players[0] : null;
-         if (roomObj.host) {
-            const newHostName = roomObj.displayNames[roomObj.host] || roomObj.host.slice(0, 6);
-            io.to(r).emit('message', `👑 ${newHostName} hiện là Chủ phòng (Host) mới`);
-            emitBankRequests(r);
-         }
+      // Xử lý Host mất kết nối: Đợi 5s trước khi chuyển Host
+      if (roomObj.host === socket.id) {
+         if (roomObj.hostDisconnectTimeout) clearTimeout(roomObj.hostDisconnectTimeout);
+         roomObj.hostDisconnectTimeout = setTimeout(() => {
+            if (rooms[r] && rooms[r].host === socket.id) {
+               const newHost = rooms[r].players.find(p => p !== socket.id);
+               if (newHost) {
+                  rooms[r].host = newHost;
+                  const newHostName = rooms[r].displayNames[newHost] || newHost.slice(0, 6);
+                  io.to(r).emit('message', `👑 ${newHostName} hiện là Chủ phòng (Host) mới (Host cũ mất kết nối quá 5s)`);
+                  io.to(r).emit('gameState', { 
+                      started: !!rooms[r].started, dealer: rooms[r].dealer, host: rooms[r].host, currentTurn: rooms[r].currentTurn, currentMaxBet: rooms[r].currentMaxBet, communityCards: rooms[r].communityCards, cardsDealt: !!rooms[r].cardsDealt, defaultBigBlind: rooms[r].defaultBigBlind 
+                  });
+                  emitBankRequests(r);
+               }
+            }
+         }, 5000);
       }
     });
   });
@@ -870,6 +952,7 @@ io.on("connection", (socket) => {
       // Nếu đang ngồi ghế: GIỮ NGUYÊN DỮ LIỆU
       const name = roomObj.displayNames[socket.id] || socket.id;
       io.to(room).emit('message', `⚠️ ${name} đã rời phòng (Đang giữ ghế)`);
+      startKickTimeout(roomObj, socket.id, room);
     } else {
       // Nếu không ngồi ghế: Xóa dữ liệu
       if (roomObj.playerNumbers && roomObj.playerNumbers[socket.id]) delete roomObj.playerNumbers[socket.id];
@@ -944,6 +1027,71 @@ io.on("connection", (socket) => {
     emitPlayerList(room);
     emitBankUpdate(room);
     emitSeatUpdate(room);
+  });
+
+  socket.on('kickPlayer', ({ room, targetId }) => {
+    if (!room || !rooms[room]) return;
+    const r = rooms[room];
+    if (socket.id !== r.host) {
+      socket.emit('seatError', 'Chỉ Host mới có quyền kick người chơi');
+      return;
+    }
+    
+    const seatIdx = r.seats.indexOf(targetId);
+    const name = r.displayNames[targetId] || targetId;
+
+    // 1. Fold bài nếu đang chơi
+    if (seatIdx !== -1 && r.started && !r.folded[targetId]) {
+       r.folded[targetId] = true;
+    }
+
+    // 2. Xóa khỏi ghế
+    if (seatIdx !== -1) {
+      r.seats[seatIdx] = null;
+      if (r.playerNumbers[targetId]) delete r.playerNumbers[targetId];
+      if (r.roles[targetId]) delete r.roles[targetId];
+      if (r.dealer === targetId) {
+         r.dealer = null;
+         const firstOcc = r.seats.find(s => s);
+         if (firstOcc) { r.dealer = firstOcc; r.roles[firstOcc] = 'Dealer'; }
+      }
+      if (!r.seats.some(s => s !== null)) r.defaultBigBlind = 0;
+    }
+
+    // 3. Xóa khỏi danh sách players
+    r.players = r.players.filter(p => p !== targetId);
+
+    // 4. Xử lý lượt chơi nếu cần
+    if (r.started) {
+       const activePlayers = r.seats.filter(pid => pid && !r.folded[pid]);
+       if (activePlayers.length <= 1) {
+          r.currentTurn = null;
+          io.to(room).emit('turnUpdate', { currentTurn: null, currentLabel: 'Vòng kết thúc', currentMaxBet: r.currentMaxBet });
+          setTimeout(() => { if (rooms[room] && rooms[room].started) determineWinner(room); }, 1000);
+       } else if (r.currentTurn === targetId) {
+          let next = null;
+          const len = r.seats.length;
+          for (let i = 1; i <= len; i++) {
+             const idx = (seatIdx + i) % len;
+             const pid = r.seats[idx];
+             if (pid && !r.folded[pid] && (r.balances[pid] || 0) > 0) { next = pid; break; }
+          }
+          r.currentTurn = next;
+          const turnLabel = r.currentTurn ? (r.displayNames[r.currentTurn] || r.currentTurn) : null;
+          io.to(room).emit('turnUpdate', { currentTurn: r.currentTurn, currentLabel: turnLabel, currentMaxBet: r.currentMaxBet });
+       }
+    }
+
+    io.to(room).emit('message', `Host đã kick ${name} ra khỏi phòng`);
+    emitSeatUpdate(room);
+    emitPlayerList(room);
+    emitBankUpdate(room);
+    
+    const targetSocket = io.sockets.sockets.get(targetId);
+    if (targetSocket) {
+       targetSocket.leave(room);
+       targetSocket.emit('kicked', 'Bạn đã bị Host kick khỏi phòng');
+    }
   });
 
   function advanceRound(roomName) {

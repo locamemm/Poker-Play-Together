@@ -221,6 +221,7 @@
     var myId = null;
     var roomName = null;
     var playerName = null;
+    window.__hostId = null;
     window.__showdownHands = null;
     window.__defaultBigBlind = null;
 
@@ -268,6 +269,11 @@
     });
     socket.on('joinError', (msg) => {
       alert(msg);
+    });
+
+    socket.on('kicked', (msg) => {
+      alert(msg);
+      location.reload();
     });
 
     // queue toggle
@@ -334,7 +340,24 @@
       ul.innerHTML = '';
       list.forEach(item => {
         const li = document.createElement('li');
-        li.textContent = `${item.name}: ${item.balance} (đã vay ${item.loans})`;
+        let text = `${item.name}: ${item.balance} (đã vay ${item.loans})`;
+        if (!item.isConnected) text += " [Mất kết nối]";
+        li.textContent = text;
+
+        if (window.__hostId === myId && item.id !== myId) {
+          const kickSpan = document.createElement('span');
+          kickSpan.textContent = " Sút";
+          kickSpan.style.color = "red";
+          kickSpan.style.fontWeight = "bold";
+          kickSpan.style.cursor = "pointer";
+          kickSpan.style.marginLeft = "8px";
+          kickSpan.onclick = () => {
+            if (confirm(`Bạn có chắc muốn kick ${item.name}?`)) {
+              socket.emit('kickPlayer', { room: roomName, targetId: item.id });
+            }
+          };
+          li.appendChild(kickSpan);
+        }
         ul.appendChild(li);
       });
     });
@@ -535,10 +558,11 @@
       document.getElementById("tableCenter").innerHTML = html;
     }
 
-    socket.on('gameState', ({ started, dealer, currentTurn, currentMaxBet, communityCards, cardsDealt, defaultBigBlind }) => {
+    socket.on('gameState', ({ started, dealer, host, currentTurn, currentMaxBet, communityCards, cardsDealt, defaultBigBlind }) => {
       // handle initial/join state: started and dealer id
       window.__roomStarted = !!started;
       window.__dealerId = dealer || null;
+      window.__hostId = host || null;
       window.__currentTurn = currentTurn || null;
       window.__currentMaxBet = currentMaxBet || 0;
       window.__communityCards = communityCards || [];
