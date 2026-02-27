@@ -100,7 +100,7 @@
         transform-origin: top center;
         left: 50%;
         margin-left: -180px;
-        margin-top: 180px;
+        margin-top: -30px;
       }
 
       .table { width: 160px; height: 160px; margin-left: -80px; margin-top: -80px; font-size: 16px; border-width: 2px; }
@@ -142,11 +142,9 @@
       #queuePanel, #bankPanel {
         top: 50px !important; width: 90% !important; left: 5% !important; right: auto !important;
       }
-
-      #topControls {
-        margin-top: -120px;
-        position: relative;
-        z-index: 20;
+      .start-box {
+        padding: 8px 14px;
+        font-size: 12px;
       }
     }
   </style>
@@ -177,28 +175,31 @@
       <ul id="bankList" style="list-style:none; padding:0; margin:0"></ul>
     </div>
 
-    <div class="table-area" aria-label="Poker table" style="display:none;">
-      <div id="topControls" style="text-align:center; margin-bottom:8px;">
-        <div id="tableStartBox" class="start-box" data-state="stopped">Start</div>
-        <div id="roundButtons" style="display:inline-block; margin-left:12px; vertical-align:middle;">
-          <button id="checkBtn" class="action-btn" style="display:none; margin-left:6px; padding:8px 10px; border-radius:6px;">Check</button>
-          <button id="raiseBtn" class="action-btn" style="display:none; margin-left:6px; padding:8px 10px; border-radius:6px;">Tố</button>
-          <button id="allinBtn" class="action-btn" style="display:none; margin-left:6px; padding:8px 10px; border-radius:6px;">All in</button>
-          <button id="foldBtn" class="action-btn" style="display:none; margin-left:6px; padding:8px 10px; border-radius:6px;">Bỏ bài</button>
+    <div id="gameContainer" style="display:none;">
+      <div id="topControls" style="text-align:center; margin: 20px 0;">
+          <div id="tableStartBox" class="start-box" data-state="stopped">Start</div>
+          <div id="roundButtons" style="display:inline-block; margin-left:12px; vertical-align:middle;">
+            <button id="checkBtn" class="action-btn" style="display:none; margin-left:6px; padding:8px 10px; border-radius:6px;">Check</button>
+            <button id="raiseBtn" class="action-btn" style="display:none; margin-left:6px; padding:8px 10px; border-radius:6px;">Tố</button>
+            <button id="allinBtn" class="action-btn" style="display:none; margin-left:6px; padding:8px 10px; border-radius:6px;">All in</button>
+            <button id="foldBtn" class="action-btn" style="display:none; margin-left:6px; padding:8px 10px; border-radius:6px;">Bỏ bài</button>
+          </div>
+        </div>
+
+      <div class="table-area" aria-label="Poker table">
+        <div class="table" id="tableCenter"></div>
+        <div class="seats" id="seats">
+          <div class="seat"><span class="name">Seat 1</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
+          <div class="seat"><span class="name">Seat 2</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
+          <div class="seat"><span class="name">Seat 3</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
+          <div class="seat"><span class="name">Seat 4</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
+          <div class="seat"><span class="name">Seat 5</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
+          <div class="seat"><span class="name">Seat 6</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
+          <div class="seat"><span class="name">Seat 7</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
+          <div class="seat"><span class="name">Seat 8</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
         </div>
       </div>
-      <div class="table" id="tableCenter"></div>
-    <div class="seats" id="seats">
-      <div class="seat"><span class="name">Seat 1</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
-      <div class="seat"><span class="name">Seat 2</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
-      <div class="seat"><span class="name">Seat 3</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
-      <div class="seat"><span class="name">Seat 4</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
-      <div class="seat"><span class="name">Seat 5</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
-      <div class="seat"><span class="name">Seat 6</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
-      <div class="seat"><span class="name">Seat 7</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
-      <div class="seat"><span class="name">Seat 8</span><div class="role"></div><div class="balance"></div><div class="bet"></div><div class="cards"></div></div>
     </div>
-  </div>
 
   <!-- Khung chứa Chat -->
   <div id="chat-container">
@@ -259,7 +260,7 @@
     socket.on('joinAccepted', (roomNameAccepted) => {
       window.roomName = roomNameAccepted;
       // show seats/table
-      document.querySelector('.table-area').style.display = 'block';
+      document.getElementById('gameContainer').style.display = 'block';
       // disable room input and join button to avoid switching
       document.getElementById('room').disabled = true;
       document.getElementById('playerName').disabled = true;
