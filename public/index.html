@@ -90,6 +90,16 @@
     .blink-anim {
       animation: blink-text 1s infinite;
     }
+    .community-card {
+      background: #fff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      min-width: 35px;
+      border: 1px solid #333;
+      font-size: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      font-weight: bold;
+    }
 
     /* Mobile Responsive Styles */
     @media screen and (max-width: 768px) {
@@ -110,6 +120,12 @@
       .seat .cards { right: -40px; }
       .card { width: 16px; height: 24px; font-size: 11px; }
       
+      .community-card {
+        padding: 2px 5px;
+        min-width: 10px;
+        font-size: 10px;
+      }
+
       .seat:nth-child(1){ transform: rotate(0deg)   translate(135px) rotate(0deg); }
       .seat:nth-child(2){ transform: rotate(45deg)  translate(135px) rotate(-45deg); }
       .seat:nth-child(3){ transform: rotate(90deg)  translate(135px) rotate(-90deg); }
@@ -551,7 +567,7 @@
         html += `<div style="margin-top:10px; display:flex; gap:5px; justify-content:center;">`;
         cards.forEach(c => {
           const color = (c.includes('♥') || c.includes('♦')) ? '#d32f2f' : '#000';
-          html += `<div style="background:#fff; color:${color}; padding:4px 8px; border-radius:4px; min-width:35px; border:1px solid #333; font-size:20px; box-shadow:0 2px 4px rgba(0,0,0,0.5)">${c}</div>`;
+          html += `<div class="community-card" style="color:${color}">${c}</div>`;
         });
         html += `</div>`;
       }
