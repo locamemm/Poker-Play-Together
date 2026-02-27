@@ -90,6 +90,14 @@
     .blink-anim {
       animation: blink-text 1s infinite;
     }
+    @keyframes blink-start-btn {
+      0% { border-color: #ffd54f; box-shadow: 0 0 5px #ffd54f; }
+      50% { border-color: #fff; box-shadow: 0 0 20px #ffd54f; }
+      100% { border-color: #ffd54f; box-shadow: 0 0 5px #ffd54f; }
+    }
+    .start-box.blink-me {
+      animation: blink-start-btn 1.2s infinite;
+    }
     .community-card {
       background: #fff;
       padding: 4px 8px;
@@ -591,12 +599,15 @@
       if (window.__roomStarted) {
         btn.textContent = 'End game now';
         btn.dataset.state = 'started';
+        btn.classList.remove('blink-me');
         // only dealer can click End (but End is allowed for dealer only originally); keep clickable for dealer
         btn.style.pointerEvents = (myId === window.__dealerId) ? 'auto' : 'none';
         btn.style.opacity = (myId === window.__dealerId) ? '1' : '0.6';
       } else {
         btn.textContent = 'Start';
         btn.dataset.state = 'stopped';
+        if (myId === window.__dealerId) btn.classList.add('blink-me');
+        else btn.classList.remove('blink-me');
         btn.style.pointerEvents = (myId === window.__dealerId) ? 'auto' : 'none';
         btn.style.opacity = (myId === window.__dealerId) ? '1' : '0.6';
       }
